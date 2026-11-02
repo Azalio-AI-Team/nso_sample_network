@@ -56,6 +56,8 @@ graph TD
 | `apic-em_get_inventory_stats/`| APIC-EM REST API | Cisco APIC-EM | `/api/v1/network-device` | Off-box |
 | `netmiko-interface-example/` | SSHv2 / CLI | Cisco IOS / IOS-XE | Netmiko Cisco IOS Driver | Off-box |
 | `snmp_entity/` | SNMPv2c / UDP 161 | Cisco IOS-XE | `ENTITY-MIB::entPhysicalDescr` | Off-box |
+| `nso_device_manager/` | RESTCONF (RFC 8040) | Cisco NSO / All NEDs | `tailf-ncs:devices` | Off-box |
+| `nso_port_blocking/` | RESTCONF (RFC 8040) | Cisco NSO / Cisco IOS | `tailf-ned-cisco-ios:ip/access-list`, `interface` | Off-box |
 | `root` (`nso_client.py`) | RESTCONF (RFC 8040) | Cisco NSO / NCS | `tailf-ncs`, `tailf-ned-cisco-ios` | Off-box |
 
 ---
@@ -239,6 +241,34 @@ graph TD
 ### 20. `snmp_entity/`
 - **Why it is there**: Legacy network management baseline. Demonstrates retrieving RFC 1213 / ENTITY-MIB physical hardware tables using SNMPv2c/SNMPv3.
 - **How it works**: Uses `netsnmp` Python bindings to query OID `.1.3.6.1.2.1.47.1.1.1.1.2` (`entPhysicalDescr`) and `.1.3.6.1.2.1.47.1.1.1.1.11` (`entPhysicalSerialNum`).
+
+---
+
+### 21. `nso_device_manager/`
+- **Why it is there**: Comprehensive NSO device lifecycle management package. Automates onboarding, updating, renaming, deleting, and synchronizing devices in Cisco NSO CDB.
+- **How it works**: Connects to RFC 8040 RESTCONF endpoint `/restconf/data/tailf-ncs:devices` and `/restconf/operations/tailf-ncs:devices`. Supports Cisco IOS (`cisco-ios-cli-6.109`), IOS-XR (`cisco-iosxr-cli-7.65`), NX-OS (`cisco-nx-cli-5.27`), and ASA (`cisco-asa-cli-6.18`).
+- **Scripts in Package**:
+  - `device_manager.py`: Complete CLI and importable module supporting `--action {list,get,add,edit,rename,delete,sync-from,fetch-keys,check-sync}`.
+  - `requirements.txt`: Lightweight dependencies (`requests`, `urllib3`).
+  - `README.md`: Architectural documentation and CLI examples.
+- **Verification**:
+  ```bash
+  python nso_device_manager/device_manager.py --action list
+  ```
+
+---
+
+### 22. `nso_port_blocking/`
+- **Why it is there**: Network security and interface isolation package. Provides dual-mode port blocking: Layer 4 ACL traffic filtering and administrative interface shutdown.
+- **How it works**: Uses RESTCONF to provision extended ACLs under `/restconf/data/tailf-ncs:devices/device={device}/config/tailf-ned-cisco-ios:ip/access-list/extended={acl_name}` and binds them to target router/switch interfaces (`GigabitEthernet`, `FastEthernet`). Also supports interface administrative state toggling (`shutdown` / `no shutdown`).
+- **Scripts in Package**:
+  - `port_blocker.py`: Complete CLI and importable module supporting `--action {block-port,unblock-port,shut-interface,enable-interface,status,list-acls}`.
+  - `requirements.txt`: Lightweight dependencies (`requests`, `urllib3`).
+  - `README.md`: Usage guidelines, verification, and rollback procedures.
+- **Verification**:
+  ```bash
+  python nso_port_blocking/port_blocker.py --action block-port --device dist-rtr01 --port-number 23
+  ```
 
 ---
 

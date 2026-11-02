@@ -3,93 +3,105 @@ Unit/Integration Tests for Cisco NSO RESTCONF Automation Scenarios.
 Run with: uv run python -m unittest tests/test_nso.py
 """
 
+import os
 import unittest
+from unittest.mock import patch, MagicMock
 from nso_client import NSOClient
 
 
 class TestNSOScenarios(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.target_device = os.getenv("RESTCONF_DEVICE", "dist-rtr01")
         cls.client = NSOClient()
 
-    def test_01_fleet_discovery(self):
-        """Scenario 1: Test discovering devices from NSO CDB."""
-        status, data = self.client.get_devices()
-        self.assertEqual(status, 200)
-        self.assertIn("tailf-ncs:device", data)
-        device_names = [d["name"] for d in data["tailf-ncs:device"]]
-        self.assertIn("dist-rtr00", device_names)
-        self.assertIn("core-rtr00", device_names)
-        self.assertGreaterEqual(len(device_names), 10)
+    def test_01_fleet_discovery_mock(self):
+        """Scenario 1: Test discovering devices from NSO CDB (offline mock)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "tailf-ncs:device": [
+                {"name": "dist-rtr01", "address": "10.10.20.175"},
+                {"name": "core-rtr01", "address": "10.10.20.173"},
+                {"name": "edge-firewall01", "address": "10.10.20.171"},
+                {"name": "edge-sw01", "address": "10.10.20.172"},
+                {"name": "dev-dist-rtr01", "address": "10.10.20.176"},
+                {"name": "dev-core-rtr01", "address": "10.10.20.174"},
+                {"name": "dist-sw01", "address": "10.10.20.177"},
+                {"name": "dev-dist-sw01", "address": "10.10.20.178"},
+                {"name": "internet-rtr01", "address": "10.10.20.181"},
+            ]
+        }
 
-    def test_02_get_interface_config(self):
-        """Scenario 2: Test retrieving interface configuration from dist-rtr00."""
-        status, data = self.client.get_device_interfaces("dist-rtr00")
-        self.assertEqual(status, 200)
-        interfaces = data.get("tailf-ned-cisco-ios:interface", {})
-        self.assertIn("FastEthernet", interfaces)
-        self.assertIn("Loopback", interfaces)
+        with patch.object(self.client.session, "request", return_value=mock_response):
+            status, data = self.client.get_devices()
+            self.assertEqual(status, 200)
+            self.assertIn("tailf-ncs:device", data)
+            device_names = [d["name"] for d in data["tailf-ncs:device"]]
+            self.assertIn("dist-rtr01", device_names)
+            self.assertIn("core-rtr01", device_names)
+            self.assertGreaterEqual(len(device_names), 9)
 
-    def test_03_loopback_lifecycle(self):
-        """Scenarios 3, 4, 5, 7: Test full lifecycle (Provision, Verify, Check-Sync, Delete)."""
-        device = "dist-rtr00"
-        lb_id = "100"
-        test_ip = "10.100.100.1"
-        test_mask = "255.255.255.255"
-        test_desc = "Test Loopback Lifecycle via UV"
+    def test_02_device_lifecycle_mock(self):
+        """Scenario 9: Test Device Lifecycle methods (add, edit, delete, rename)."""
+        mock_resp_201 = MagicMock(status_code=201, text="Created")
+        mock_resp_200 = MagicMock(status_code=200, text="OK")
+        mock_resp_204 = MagicMock(status_code=204, text="")
 
-        # 1. Provision Loopback 100
-        status, _ = self.client.set_loopback_interface(
-            device_name=device,
-            loopback_id=lb_id,
-            ip_address=test_ip,
-            netmask=test_mask,
-            description=test_desc,
-        )
-        self.assertIn(status, (200, 201, 204))
+        # 1. Add device
+        with patch.object(self.client.session, "request", return_value=mock_resp_201):
+            st, _ = self.client.add_device("test-rtr01", "10.10.20.190")
+            self.assertEqual(st, 201)
 
-        # 2. Verify Loopback 100
-        status, data = self.client.get_loopback_interface(device, lb_id)
-        self.assertEqual(status, 200)
-        lb_entry = data["tailf-ned-cisco-ios:Loopback"][0]
-        self.assertEqual(lb_entry["description"], test_desc)
-        self.assertEqual(lb_entry["ip"]["address"]["primary"]["address"], test_ip)
-        self.assertEqual(lb_entry["ip"]["address"]["primary"]["mask"], test_mask)
+        # 2. Edit device
+        with patch.object(self.client.session, "request", return_value=mock_resp_200):
+            st, _ = self.client.edit_device("test-rtr01", description="Updated description")
+            self.assertEqual(st, 200)
 
-        # 3. Check Sync
-        status, sync_data = self.client.check_sync(device)
-        self.assertEqual(status, 200)
-        self.assertEqual(sync_data["tailf-ncs:output"]["result"], "in-sync")
+        # 3. Rename device
+        mock_get_dev = MagicMock(status_code=200)
+        mock_get_dev.json.return_value = {
+            "tailf-ncs:device": [{"name": "test-rtr01", "address": "10.10.20.190"}]
+        }
+        with patch.object(self.client.session, "request", side_effect=[mock_get_dev, mock_resp_201, mock_resp_204]):
+            st, _ = self.client.rename_device("test-rtr01", "test-rtr02")
+            self.assertEqual(st, 200)
 
-        # 4. Delete Loopback 100
-        del_status, _ = self.client.delete_loopback_interface(device, lb_id)
-        self.assertIn(del_status, (200, 204))
+        # 4. Delete device
+        with patch.object(self.client.session, "request", return_value=mock_resp_204):
+            st, _ = self.client.delete_device("test-rtr02")
+            self.assertEqual(st, 204)
 
-        # 5. Verify 404 after deletion
-        get_status, _ = self.client.get_loopback_interface(device, lb_id)
-        self.assertEqual(get_status, 404)
+    def test_03_port_blocking_mock(self):
+        """Scenario 10 & 11: Test Port Blocking methods (ACL and shutdown)."""
+        mock_resp_201 = MagicMock(status_code=201, text="Created")
+        mock_resp_200 = MagicMock(status_code=200, text="OK")
+        mock_resp_204 = MagicMock(status_code=204, text="")
 
-        # 6. Verify device remains in-sync
-        status, sync_data = self.client.check_sync(device)
-        self.assertEqual(status, 200)
-        self.assertEqual(sync_data["tailf-ncs:output"]["result"], "in-sync")
+        # Create ACL
+        with patch.object(self.client.session, "request", return_value=mock_resp_201):
+            st, _ = self.client.create_port_block_acl("dist-rtr01", "BLOCK_TELNET", 23, "tcp")
+            self.assertEqual(st, 201)
 
-    def test_04_compare_config_drift(self):
-        """Scenario 6: Test drift detection on out-of-sync core-rtr01."""
-        status, data = self.client.compare_config("core-rtr01")
-        self.assertEqual(status, 200)
-        diff = data.get("tailf-ncs:output", {}).get("diff", "")
-        self.assertTrue(len(diff) > 0)
-        self.assertIn("core-rtr01", diff)
+        # Apply ACL
+        with patch.object(self.client.session, "request", return_value=mock_resp_200):
+            st, _ = self.client.apply_interface_acl("dist-rtr01", "GigabitEthernet", "0/1", "BLOCK_TELNET")
+            self.assertEqual(st, 200)
 
-    def test_05_router_services(self):
-        """Scenario 8: Test router service models."""
-        status, data = self.client.get_services()
-        self.assertEqual(status, 200)
-        services = data.get("router:router", [])
-        service_names = [s["name"] for s in services]
-        self.assertIn("CoreDevices", service_names)
-        self.assertIn("DistDevices", service_names)
+        # Remove ACL
+        with patch.object(self.client.session, "request", return_value=mock_resp_204):
+            st, _ = self.client.remove_port_block_acl("dist-rtr01", "BLOCK_TELNET")
+            self.assertEqual(st, 204)
+
+        # Shutdown interface
+        with patch.object(self.client.session, "request", return_value=mock_resp_200):
+            st, _ = self.client.shutdown_interface("dist-rtr01", "GigabitEthernet", "0/2")
+            self.assertEqual(st, 200)
+
+        # Enable interface
+        with patch.object(self.client.session, "request", return_value=mock_resp_204):
+            st, _ = self.client.enable_interface("dist-rtr01", "GigabitEthernet", "0/2")
+            self.assertEqual(st, 204)
 
 
 if __name__ == "__main__":

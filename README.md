@@ -4,7 +4,7 @@ A collection of Python Code Samples for Network Management across Cisco technolo
 
 Includes samples that leverage on-box libraries (Guest Shell / EEM), external APIs (NETCONF/RESTCONF, SNMP, SSH, REST), and centralized controllers.
 
-> 📖 **Comprehensive Package Catalog**: See [PACKAGES.md](./PACKAGES.md) for detailed architectural documentation, YANG data models, input parameters, and execution instructions for all 20 packages and the Cisco NSO automation framework.
+> 📖 **Comprehensive Package Catalog**: See [PACKAGES.md](./PACKAGES.md) for detailed architectural documentation, YANG data models, input parameters, and execution instructions for all 22 packages and the Cisco NSO automation framework.
 
 ---
 
@@ -73,6 +73,8 @@ Python scripts interacting with network elements and controllers via standard in
 | [Get Host List from APIC-EM](/apic-em_get_hosts) | Queries Cisco APIC-EM REST API (`/api/v1/host`) for connected client IP and MAC mappings. |
 | [Get Inventory Stats from APIC-EM](/apic-em_get_inventory_stats) | Fetches complete network device inventory and hardware lifecycle statistics. |
 | [Retrieve Tenants from ACI APIC](/acitoolkit_show_tenants) | Queries Cisco ACI fabric for active Tenants, Application Profiles, and EPGs via `acitoolkit`. |
+| [NSO Device Lifecycle Manager](/nso_device_manager) | Standalone package to onboard, edit, rename, delete, and synchronize devices in Cisco NSO CDB. |
+| [NSO Network Port Blocker](/nso_port_blocking) | Standalone package for Layer 4 ACL port filtering and administrative interface shutdown on NSO devices. |
 
 ---
 
@@ -80,8 +82,8 @@ Python scripts interacting with network elements and controllers via standard in
 
 The root directory contains an enterprise-grade automation framework targeting **Cisco Network Services Orchestrator (NSO / NCS)** via RESTCONF:
 
-- [`nso_client.py`](./nso_client.py): Reusable RESTCONF client for device discovery, interface lifecycle, check-sync, and rollback.
-- [`nso_scenarios.py`](./nso_scenarios.py): 8 automated scenarios covering fleet discovery, intent verification, and compliance checks.
+- [`nso_client.py`](./nso_client.py): Reusable RESTCONF client with auto-scheme detection (HTTP:8080/HTTPS:443), device lifecycle, port blocking, check-sync, and sync-from.
+- [`nso_scenarios.py`](./nso_scenarios.py): 11 automated scenarios covering fleet discovery, interface provisioning, drift analysis, device lifecycle, and port blocking.
 - [`main.py`](./main.py): Interactive terminal runner for network engineers.
-- [`tests/test_nso.py`](./tests/test_nso.py): Automated test suite.
+- [`tests/`](./tests/): Comprehensive unit test suite with 100% offline mock verification (`test_nso.py`, `test_device_manager.py`, `test_port_blocking.py`).
 - [`VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md`](./VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md): Complete demonstration and presentation runbook.
