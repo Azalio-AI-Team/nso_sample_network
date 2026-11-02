@@ -1,93 +1,98 @@
-## Dev environment tips
+# Agent & Developer Guidelines: Python Code Samples Network
 
-- **Python version**: Use Python 3.9+.
-- **Virtual env (recommended)**:
+This repository contains network programmability and automation code samples across Cisco technologies (RESTCONF, NETCONF, Cisco IOS-XE, Cisco NSO, Netmiko, SNMP, and Python-based network scenarios).
+
+This project is configured for **Spec-Driven Development (SDD)** using **GitHub Spec Kit** with multi-agent integrations for **Antigravity (`agy`)** and **Claude Code (`claude`)**.
+
+---
+
+## 1. Spec-Driven Development (SDD) with Spec Kit
+
+Spec Kit provides a structured, disciplined development pipeline where specifications and core architectural rules act as the source of truth.
+
+### Core Constitution
+- **Location**: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+- **Purpose**: Establishes non-negotiable principles, security rules, network I/O resilience requirements, and governance. All specifications, technical plans, tasks, and generated code MUST comply with the project constitution.
+
+### SDD Workflow & Available Skills
+Both Antigravity (`.agents/skills/`) and Claude Code (`.claude/skills/`) integrations are configured with the following command skills:
+
+1. **`/speckit-constitution`**: Establish, audit, or amend the project constitution and core principles.
+2. **`/speckit-specify`**: Create a baseline specification (`spec.md`) focusing on user stories, goals, and acceptance criteria.
+3. **`/speckit-clarify`** *(Optional)*: Interactively resolve ambiguities and edge cases before technical planning.
+4. **`/speckit-plan`**: Formulate an implementation blueprint (`plan.md`) defining architecture, API endpoints, schema models, and file impacts.
+5. **`/speckit-checklist`** *(Optional)*: Generate quality and requirements checklists to validate the plan.
+6. **`/speckit-tasks`**: Generate an ordered, dependency-aware task list (`tasks.md`) broken into discrete, testable work units.
+7. **`/speckit-implement`**: Execute tasks step-by-step against tests and validation criteria.
+8. **`/speckit-converge`**: Evaluate the codebase state against the active specification and append remaining work items.
+
+---
+
+## 2. Dev Environment & Setup
+
+- **Python Version**: Python 3.9+ (Python 3.12 / 3.14 compatible).
+- **Virtual Environment**:
   ```bash
   python3 -m venv .venv
   source .venv/bin/activate
   python -m pip install -U pip
   ```
-- **Each sample is standalone**: cd into a sample directory, read its `README.md`, install that folder’s `requirements.txt` if present, then run the script.
-- **Install dependencies (pattern)**:
+- **Modern uv Workflow**:
   ```bash
-  cd /python_code_samples_network/<sample-folder>
-  [ -f requirements.txt ] && python -m pip install -r requirements.txt
+  uv sync
+  uv run pytest
   ```
-- **Common packages**: Some samples use `requests`, `ncclient`, `pysnmp`, or `netmiko`. If a folder has no `requirements.txt`, install what the `README.md` mentions, e.g.:
+- **Standalone Sample Folders**: Each network sample directory is self-contained. Navigate to the folder, read its `README.md`, install dependencies, and run:
   ```bash
-  python -m pip install requests ncclient netmiko pysnmp
-  ```
-- **Secrets and device access**: Most scripts expect you to edit device/controller IP, username, and password inside the script (or helper files like `device_info.py`). Ensure network reachability and open ports (SSH/NETCONF/RESTCONF/HTTPS).
-
-### Quick run examples
-
-- **Netmiko interface example**
-  ```bash
-  cd /python_code_samples_network/netmiko-interface-example
-  python -m pip install -r requirements.txt
-  # Set device details in device_info.py
-  python netmiko-get-interface.py
-  python netmiko-create-interface.py
-  python netmiko-delete-interface.py
-  ```
-
-- **RESTCONF – update IP address**
-  ```bash
-  cd /python_code_samples_network/restconf_update_ipaddress
-  python -m pip install -r requirements.txt
-  python updateip.py
-  ```
-
-- **NETCONF – get/edit config**
-  ```bash
-  cd /python_code_samples_network/NC-get-config
-  python -m pip install ncclient
-  python NC-get-config.py
-  ```
-
-## Testing instructions
-
-- **There is no unified test suite** in this repository. Most folders contain minimal examples meant to run directly against real devices/controllers.
-- **Smoke test** a change by running the sample(s) you touched:
-  ```bash
-  cd /python_code_samples_network/<sample-folder>
+  cd <sample-folder>
   [ -f requirements.txt ] && python -m pip install -r requirements.txt
   python <script>.py
   ```
-- **Static checks (optional)**: If you add new Python code, you can run lightweight checks:
+- **Common Packages**: `requests`, `ncclient`, `netmiko`, `pysnmp`, `pytest`.
+
+---
+
+## 3. Secrets & Device Configuration (NON-NEGOTIABLE)
+
+**Never commit real credentials, passwords, tokens, or private endpoints.**
+
+- Scripts must prioritize configuration via environment variables:
+  - `RESTCONF_HOST` / `NSO_HOST`
+  - `RESTCONF_USER` / `NSO_USER`
+  - `RESTCONF_PASSWORD` / `DEVNET_RESTCONF_PASSWORD` / `NSO_PASSWORD`
+  - `RESTCONF_DEVICE` (default: `dist-rtr00`)
+- If credentials are not present in the environment, scripts must prompt securely via `getpass()`.
+- Default values must only point to public Cisco DevNet sandboxes.
+- Never commit `.env` or personal credential files.
+
+---
+
+## 4. Testing & Quality Verification
+
+- **Offline Unit & Mock Tests**:
+  Network scripts should include unit tests with mocked responses (e.g. `unittest.mock` or `pytest-mock` for HTTP/RESTCONF and NETCONF calls) to allow verification without physical hardware:
   ```bash
-  python -m pip install ruff mypy
+  pytest tests/
+  ```
+- **DevNet Sandbox Smoke Tests**:
+  Test against live devices using Cisco DevNet Sandbox:
+  - https://devnetsandbox.cisco.com/DevNet
+  - Cisco API Docs: https://developer.cisco.com/docs/
+- **Static Checks & Linting**:
+  ```bash
   ruff check .
   mypy --ignore-missing-imports .
   ```
 
-- **Test the code with the Cisco DevNet sandbox**
-  Visit https://devnetsandbox.cisco.com/DevNet to book a related sandbox
-  
-- **Latest Cisco API documentation**:
-  https://developer.cisco.com/docs/
+---
 
+## 5. Contribution & PR Instructions
 
-## PR instructions
-
-- **Title format**: `[sample-folder] <Short description>` (e.g., `[RESTCONF] fix hostname PUT example`).
-- **Scope**: Keep changes limited to one sample folder when possible. If you cross-cut multiple folders, explain why in the PR description.
-- **Before committing**:
-  - Run the modified script(s) to ensure they work end-to-end.
-  - If you added deps, include or update that folder’s `requirements.txt`.
+- **PR Title Format**: `[sample-folder] <Short description>` (e.g. `[RESTCONF] support NSO device targeting`).
+- **Scope**: Keep changes limited to one sample folder or one self-contained capability whenever possible.
+- **Pre-Commit Checklist**:
+  - Run modified scripts and automated unit tests.
+  - Update folder `requirements.txt` if dependencies changed.
   - Update `README.md` within the affected folder.
-  - Run optional linters:
-    ```bash
-    ruff check .
-    ```
-- **Security**: Do not commit real credentials or tokens. Use placeholders and document required env vars or files.
-
-## Contribution conventions
-
-- **Coding style**: Prefer clear, readable Python with descriptive variable names and early returns. Avoid catching exceptions without handling.
-- **Inputs**: Use constants or a small config block at the top of the script for device IP/credentials. Consider reading from environment variables if it improves UX.
-- **Outputs**: Print concise results or JSON. Avoid noisy logs; add `-v/--verbose` only if needed.
-- **Dependencies**: Pin major versions when practical; keep per-folder `requirements.txt` minimal.
-- **Backward compatibility**: Do not change existing sample behavior unless clearly improving or fixing a bug; document changes.
-
-
+  - Run `ruff check .` to ensure clean code style.
+  - Verify no passwords, tokens, or internal IP addresses are committed.
