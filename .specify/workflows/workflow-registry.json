@@ -4,10 +4,18 @@
     "speckit": {
       "name": "Full SDD Cycle",
       "version": "1.0.1",
-      "description": "Runs specify \u2192 plan \u2192 tasks \u2192 implement with review gates",
+      "description": "Runs specify → plan → tasks → implement with review gates",
       "source": "bundled",
       "installed_at": "2026-11-02T14:13:43.616126+00:00",
       "updated_at": "2026-11-02T14:13:43.616133+00:00"
+    },
+    "network-sdd": {
+      "name": "Network Engineering Spec-Driven Workflow",
+      "version": "1.0.0",
+      "description": "Cisco network automation SDD pipeline: Clarify → Specify → Codebase Discovery → Plan & Test Payload Generation → Impact Review → Tasks → Human Sign-off → Implement → Converge",
+      "source": "project",
+      "installed_at": "2026-11-02T14:30:00.000000+00:00",
+      "updated_at": "2026-11-02T14:30:00.000000+00:00"
     }
   }
 }

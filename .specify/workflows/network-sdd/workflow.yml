@@ -1,0 +1,97 @@
+schema_version: "1.0"
+workflow:
+  id: "network-sdd"
+  name: "Network Engineering Spec-Driven Workflow"
+  version: "1.0.0"
+  author: "Azalio Network Automation Team"
+  description: "Repository-tailored SDD pipeline for Cisco network automation: Clarify Requirements → Structure Spec & Acceptance Criteria → Codebase Discovery & Analysis → Technical Plan & Test Payload Generation → Impact & Payload Review Gate → Task Decomposition → Human Approval Gate → Implementation → Convergence Verification"
+
+requires:
+  speckit_version: ">=0.8.5"
+  integrations:
+    any:
+      - "agy"
+      - "claude"
+      - "copilot"
+      - "gemini"
+
+inputs:
+  spec:
+    type: string
+    required: true
+    prompt: "Describe the network issue, bugfix, or automation capability requirement"
+  integration:
+    type: string
+    default: "auto"
+    prompt: "Integration to use (e.g. agy, claude; 'auto' uses the project's initialized integration)"
+
+steps:
+  # Phase 1: Understand & Clarify Requirements
+  - id: clarify
+    command: speckit.clarify
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 2: Structure Specification & Acceptance Criteria
+  - id: specify
+    command: speckit.specify
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 2 Gate: Review structured requirements & criteria
+  - id: review-spec
+    type: gate
+    message: "Verify that requirements are properly structured and acceptance criteria are fully defined before discovery."
+    options: [approve, reject]
+    on_reject: abort
+
+  # Phase 3: Codebase Review, Discovery & Analysis
+  - id: codebase-analysis
+    command: speckit.analyze
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 4: Planning, Code Change Design & Test Payload Generation
+  - id: plan
+    command: speckit.plan
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 5: Impacted Components & Payload Review Checkpoint
+  - id: review-impact-and-payloads
+    type: gate
+    message: "Review impacted components, proposed code diffs, and generated network test payloads (RESTCONF/NETCONF/CLI) before generating tasks."
+    options: [approve, reject]
+    on_reject: abort
+
+  # Phase 6: Granular Task Breakdown
+  - id: tasks
+    command: speckit.tasks
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 7: Mandatory Human-in-the-Loop Approval Gate
+  - id: human-approval-gate
+    type: gate
+    message: "HUMAN SIGN-OFF REQUIRED: Review the task sequence, blast radius, test payloads, and rollback plan before any code execution."
+    options: [approve, reject]
+    on_reject: abort
+
+  # Phase 8: Systematic Implementation
+  - id: implement
+    command: speckit.implement
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  # Phase 9: Verification & Convergence
+  - id: converge
+    command: speckit.converge
+    integration: "{{ inputs.integration }}"
+    input:
+      args: "{{ inputs.spec }}"

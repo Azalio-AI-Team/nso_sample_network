@@ -15,13 +15,18 @@ Hardcoded credentials, API keys, private tokens, or device passwords MUST NEVER 
 - Default values must only point to public Cisco DevNet sandboxes with dummy credentials if required for local development.
 - All secrets and credential files (`.env`, private keys) must be ignored via `.gitignore`.
 
-### III. Spec-Driven Development (SDD) Lifecycle
-Any new feature, scenario, or major script enhancement MUST strictly follow the Spec Kit development lifecycle:
-1. **Constitution**: Establish and verify non-negotiable architectural principles (`constitution.md`).
-2. **Specification**: Document user stories, requirements, and acceptance criteria (`/speckit-specify` -> `spec.md`).
-3. **Planning**: Formulate technical architecture, API contracts, and file impact (`/speckit-plan` -> `plan.md`).
-4. **Task Decomposition**: Break implementation into sequenced, testable work units (`/speckit-tasks` -> `tasks.md`).
-5. **Implementation & Convergence**: Execute tasks iteratively against tests, converging on the approved spec (`/speckit-implement`, `/speckit-converge`).
+### III. Repository Engineering Workflow (Clarify → Analyze → Plan & Test Payloads → Review → Human Sign-off → Implement)
+When changes, features, or problem fixes are introduced, engineers and coding agents MUST follow this sequential lifecycle:
+1. **Understand & Clarify**: The engineer/agent must understand the problem scope and ask up to 5 targeted clarification questions (`/speckit-clarify`) before writing specifications.
+2. **Structure Specification & Acceptance Criteria**: Requirements and unambiguous acceptance criteria must be formally defined (`/speckit-specify` -> `spec.md`).
+3. **Codebase Discovery & Analysis**: Before formulating technical changes, inspect the repository catalog (`PACKAGES.md`), analyze impacted sample directories, determine affected YANG models, controllers, and device targets (`/speckit-analyze`).
+4. **Planning, Code Changes & Test Payload Generation**: Formulate the technical blueprint (`/speckit-plan` -> `plan.md`). This step MUST detail:
+   - Planned code modifications and file diffs.
+   - Network test strategy (offline mocks vs DevNet sandbox).
+   - Generated network test payloads (exact RESTCONF JSON/YANG payloads, NETCONF XML filters, or CLI commands).
+5. **Impact Review & Checkpoint**: Review all impacted components, blast radius, and test payloads.
+6. **Human Approval Gate (NON-NEGOTIABLE)**: The human engineer must review and approve the planned changes, test payloads, and rollback safety before task execution begins.
+7. **Task Decomposition & Implementation**: Deconstruct into granular tasks (`/speckit-tasks` -> `tasks.md`) and execute iteratively against offline mock tests (`/speckit-implement`, `/speckit-converge`).
 
 ### IV. Deterministic Network I/O & Resilient Error Handling
 Network automation interacts with real devices, controllers (Cisco NSO, APIC-EM), and sandboxes that can experience latency, transient connectivity loss, or session aborts:
@@ -38,7 +43,7 @@ Reliability across varied network environments requires multi-tiered verificatio
 ## Technology Standards & Tooling
 
 ### Python Runtime & Environment
-- Target Python version: Python 3.9+ (supporting modern typing, async, and modern packaging).
+- Target Python version: Python 3.9+ (Python 3.12/3.14 compatible).
 - Package management: `pyproject.toml` and `uv.lock` for modern workspace workflows, with per-folder `requirements.txt` for standalone portability.
 - Primary network libraries: `requests` for RESTCONF, `ncclient` for NETCONF, `netmiko` for CLI automation, `pysnmp` for SNMP operations.
 
@@ -56,7 +61,7 @@ Reliability across varied network environments requires multi-tiered verificatio
   1. Offline unit/mock tests pass.
   2. Static lint checks pass (`ruff check .`).
   3. No hardcoded credentials or sensitive tokens introduced.
-  4. Updated documentation in the sample's `README.md`.
+  4. Updated documentation in the sample's `README.md` and repository `PACKAGES.md`.
 
 ### Constitution Governance
 - This constitution supersedes all informal development practices.
@@ -68,4 +73,4 @@ Reliability across varied network environments requires multi-tiered verificatio
      - **PATCH**: Clarifications, formatting, and non-semantic refinements.
   3. Amendment logging in the project history.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-02 | **Last Amended**: 2026-11-02
+**Version**: 1.1.0 | **Ratified**: 2026-11-02 | **Last Amended**: 2026-11-02
