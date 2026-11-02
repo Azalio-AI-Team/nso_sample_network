@@ -1,38 +1,87 @@
 # Network Automation with Python Code Samples
 
-A collection of Python Code Samples for Network Management.  Includes samples that leverage on-box libraries, as well as samples that use exposed external APIs (NETCONF/RESTCONF, SNMP, SSH, REST, etc).  Some examples make use of available SDKs.  
+A collection of Python Code Samples for Network Management across Cisco technologies (RESTCONF, NETCONF, Cisco IOS-XE, Cisco NSO, Netmiko, SNMP, EEM, APIC-EM, and Cisco ACI). 
 
-## On-Box Examples
+Includes samples that leverage on-box libraries (Guest Shell / EEM), external APIs (NETCONF/RESTCONF, SNMP, SSH, REST), and centralized controllers.
 
-Many Cisco switches and routers provide an on-box Python Interpreter that can be leveraged to execute scripts and programs directly on end devices.  In addition to the interpreter, Python libraries are included that provide direct access to the underlying devices operations to execute CLI commands, or monitor for events.  
+> 📖 **Comprehensive Package Catalog**: See [PACKAGES.md](./PACKAGES.md) for detailed architectural documentation, YANG data models, input parameters, and execution instructions for all 20 packages and the Cisco NSO automation framework.
 
-### Sample Code
+---
 
-|  Code Sample  |  Description  |
-|  --- |  ---  |
-|  [Execute CLI via Python](/Py-sho-ver-onbox)  |  This example is about as simple as it gets. By leveraging the CLI library, we execute the “show version” command on the box. |
-|  [TDR Test Every Interface](/tdr-test)  |  This example once again leverages the CLI library, but to do something a bit more interesting.  A TDR test is run on every interface in “up” status.  |
-|  [EEM Config Changes to Spark](/eem_configdiff_to_spark)  |  In this example, the EEM library is used to monitor for configuration changes.  When one occurs a message is sent to a Cisco Spark Room.  |
-|  [Python with Eventing Example](/EEM-interface-move-routes)  |  Use the EEM and Python together to script based on local events. |
-|  [EEM + Python + Spark ChatOps](/spark_checkin)  |  Use the EEM to monitor for config changes and send a Spark Message |  
-|  [EEM + Python + Email alert](/PortFlap_email_alert)  |  This example leverages the CLI library and using the EEM feature to monitor for interface flapping and send an email alert |
+## Spec-Driven Development (SDD) Workflow
 
+This repository is configured for **Spec-Driven Development (SDD)** using **GitHub Spec Kit** with multi-agent integrations for **Antigravity (`agy`)** and **Claude Code (`claude`)**.
 
-## Off-Box Examples
+Whenever code changes, bug fixes, or new automation scenarios are introduced, engineers and coding agents follow this required repository workflow:
 
-Here are few Python scripts that can interact with network elements using one of the many exposed interfaces (NETCONF, RESTCONF, SNMP, SSH, etc).  Many of these scripts could also be run on-box, however they don’t leverage any of the unique libraries available on device.  
+```mermaid
+flowchart LR
+    A["1. Clarify (/speckit-clarify)"] --> B["2. Specify (/speckit-specify)"]
+    B --> C["3. Discover (PACKAGES.md)"]
+    C --> D["4. Plan & Payloads (/speckit-plan)"]
+    D --> E["5. Impact Review"]
+    E --> F["6. Human Approval Gate"]
+    F --> G["7. Tasks & Implement (/speckit-implement)"]
+```
 
-|  Code Sample  |  Description  |
-|  --- |  ---  |
-|  [Netmiko and CLI Example for Interface Management](/netmiko-interface-example)  |  These are a series of python scripts for retrieving, creating, deleting a Loopback Interface with Python.  | 
-|  [MIB Walk with Python](/snmp_entity)  |  In this example, we perform a MIB walk against a device leveraging the “netsnmp” library for Python.  |
-|  [NETCONF Connection with Python](/netconf_entity)  |  This example shows the basics of connecting to a device with NETCONF using the  “ncclient” library for Python.  |
-|  [Configure Interface IP Address with RESTCONF](/restconf_update_ipaddress)  |  In this example the newly ratified RESTCONF standard is used to configure the IP Address on an interface.  |
-|  [Get Inventory from APIC-EM](/apic-em_get_inventory_stats)  |  APIC-EM maintains an inventory database of the entire network.  In this example Python is used to retrieve that information using the REST API.  |  
-|  [Get Host List from APIC-EM](/apic-em_get_hosts)  |  APIC-EM maintains a list of all clients connected to the network devices discovered by APIC-EM.  This example queries the APIC-EM for the list, and display’s it in a simple table.  |
-|  [Retrieve Tenants from ACI APIC](/acitoolkit_show_tenants)  |  This example leverages the ACI Toolkit to connect to an APIC controller and retrieve the list of Tenants configured.  |  
-|  [Basic NETCONF Get](/NC-get-config)  |  A basic ncclient example to `<get>` NETCONF Data  |
-|  [Basic NETCONF Edit](/NC-edit-config)  |  A basic ncclient example to `<edit-config>` NETCONF Data  |  
-|  [NETCONF XPATH Example](/NC-get-config-xpath)  |  Use the XPATH feature when making a NETCONF Requests  |  
-|  [Model Based AAA](/model-based-aaa)  |  These example scripts are for Model Based AAA to get, edit and delete the rule-lists for privilege level users and Groups by using ietf-netconf-acm.yang data model  |
-|  [RESTCONF](/RESTCONF)  |  These example scripts are for RESTCONF to retrieve and configure the switch using different operations such as Get, Delete, Put, Post and Patch.  |
+1. **Clarify Requirements**: Understand user intent and ask up to 5 clarification questions (`/speckit-clarify`).
+2. **Structure Specification**: Define requirements and strict acceptance criteria (`/speckit-specify` -> `spec.md`).
+3. **Codebase Discovery & Analysis**: Consult [PACKAGES.md](./PACKAGES.md) to discover affected modules, YANG models, and device targets (`/speckit-analyze`).
+4. **Planning & Test Payload Generation**: Formulate `plan.md` via `/speckit-plan`, detailing code diffs, offline mock testing strategy, and generated network test payloads (RESTCONF JSON, NETCONF XML, or CLI commands).
+5. **Impact Review & Checkpoint**: Verify touched files, blast radius, and rollback capabilities.
+6. **Human Approval Gate (Mandatory)**: Human engineer reviews and approves the plan, test payloads, and safety guards before code execution.
+7. **Task Decomposition & Implementation**: Deconstruct into tasks (`/speckit-tasks`) and execute against tests (`/speckit-implement`, `/speckit-converge`).
+
+- **Core Constitution**: [`.specify/memory/constitution.md`](.specify/memory/constitution.md)
+- **Agent Guidelines**: [`AGENTS.md`](./AGENTS.md) / [`agent.md`](./agent.md)
+- **Workflow Skill**: `/speckit-network-workflow`
+
+---
+
+## On-Box Examples (Guest Shell & EEM)
+
+Many Cisco switches and routers provide an on-box Python Interpreter within Guest Shell that can be leveraged to execute scripts directly on end devices.
+
+| Code Sample | Description |
+| --- | --- |
+| [Execute CLI via Python](/Py-sho-ver-onbox) | Executes `show version` on-box using the Cisco Python `cli` library. |
+| [TDR Test Every Interface](/tdr-test) | Runs Time Domain Reflectometry cable diagnostics on all active interfaces to detect physical faults. |
+| [EEM Config Changes to Spark](/eem_configdiff_to_spark) | EEM monitors for configuration changes (`%SYS-5-CONFIG_I`) and posts the diff to Cisco Webex/Spark. |
+| [Python with Eventing Example](/EEM-interface-move-routes) | EEM dynamically updates static routes when an interface state degrades. |
+| [EEM + Python + Spark ChatOps](/spark_checkin) | Sends operational alerts and change check-ins to Webex Teams. |
+| [EEM + Python + Email Alert](/PortFlap_email_alert) | Monitors for interface flapping (>5 in 5m), disables the port (`shutdown`), and sends an SMTP alert. |
+
+---
+
+## Off-Box Examples (Model-Driven & Controller APIs)
+
+Python scripts interacting with network elements and controllers via standard interfaces (NETCONF, RESTCONF, SNMP, SSH).
+
+| Code Sample | Description |
+| --- | --- |
+| [RESTCONF](/RESTCONF) | Complete RESTCONF CRUD operations (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) supporting IOS-XE and Cisco NSO. |
+| [Basic RESTCONF Get](/RC-get-config) | Minimalist RESTCONF script to fetch device running config in JSON format. |
+| [Hardware Serial Numbers via RESTCONF](/RC-get-serial-numbers) | Retrieves device chassis and module serial numbers from operational YANG models. |
+| [Configure Interface IP with RESTCONF](/restconf_update_ipaddress) | Interactive CLI script to update interface IP address using `ietf-interfaces`. |
+| [Basic NETCONF Get](/NC-get-config) | Basic `ncclient` example to `<get-config>` running configuration in XML. |
+| [Basic NETCONF Edit](/NC-edit-config) | Transactional `<edit-config>` RPC to update device hostname. |
+| [NETCONF XPATH Example](/NC-get-config-xpath) | Server-side XPATH filtering (`/native/interface/Loopback`) for bandwidth-efficient retrieval. |
+| [NETCONF Physical Entity](/netconf_entity) | Retrieves RFC 6933 / ENTITY-MIB physical hardware inventory over NETCONF. |
+| [Model-Based AAA & NACM](/model-based-aaa) | Role-Based Access Control using `ietf-netconf-acm` (RFC 8341) on Cisco IOS-XE. |
+| [Netmiko Interface Management](/netmiko-interface-example) | Multi-vendor CLI automation over SSH for retrieving, creating, and deleting Loopbacks. |
+| [SNMP Entity MIB Walk](/snmp_entity) | MIB walk against physical entities using `netsnmp` Python bindings. |
+| [Get Host List from APIC-EM](/apic-em_get_hosts) | Queries Cisco APIC-EM REST API (`/api/v1/host`) for connected client IP and MAC mappings. |
+| [Get Inventory Stats from APIC-EM](/apic-em_get_inventory_stats) | Fetches complete network device inventory and hardware lifecycle statistics. |
+| [Retrieve Tenants from ACI APIC](/acitoolkit_show_tenants) | Queries Cisco ACI fabric for active Tenants, Application Profiles, and EPGs via `acitoolkit`. |
+
+---
+
+## Centralized Cisco NSO Automation Engine
+
+The root directory contains an enterprise-grade automation framework targeting **Cisco Network Services Orchestrator (NSO / NCS)** via RESTCONF:
+
+- [`nso_client.py`](./nso_client.py): Reusable RESTCONF client for device discovery, interface lifecycle, check-sync, and rollback.
+- [`nso_scenarios.py`](./nso_scenarios.py): 8 automated scenarios covering fleet discovery, intent verification, and compliance checks.
+- [`main.py`](./main.py): Interactive terminal runner for network engineers.
+- [`tests/test_nso.py`](./tests/test_nso.py): Automated test suite.
+- [`VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md`](./VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md): Complete demonstration and presentation runbook.
