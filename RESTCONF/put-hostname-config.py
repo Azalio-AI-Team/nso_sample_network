@@ -24,40 +24,60 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 #
-# This script configures hostname of a network element using PUT operation via RESTCONF 
+# This script configures hostname or system attributes using PUT via RESTCONF
 
-# import the requests library
-import requests
+import os
 import sys
+import argparse
+import requests
 
 # disable warnings from SSL/TLS certificates
 requests.packages.urllib3.disable_warnings()
 
-# use the IP address or hostname of your Cat9300
-HOST = '172.26.198.63'
+# Configuration defaults (supports NSO and direct device)
+DEFAULT_HOST = os.getenv('RESTCONF_HOST', os.getenv('NSO_HOST', 'sandbox-nso-1.cisco.com'))
+DEFAULT_USER = os.getenv('RESTCONF_USER', os.getenv('NSO_USER', 'namansin'))
+DEFAULT_PASS = os.getenv('RESTCONF_PASSWORD', os.getenv('NSO_PASSWORD', '#u*^x6^3t6DGEcD'))
+DEFAULT_DEVICE = os.getenv('RESTCONF_DEVICE', 'dist-rtr00')
 
-# use your user credentials to access the Cat9300
-USER = 'cisco'
-PASS = 'cisco'
 
-
-# create a main() method
 def main():
-    """Main method that configures the Ip address for a interface via RESTCONF."""
+    """Main method that configures device properties via RESTCONF."""
+    parser = argparse.ArgumentParser(description="Configure Hostname/System Properties via RESTCONF")
+    parser.add_argument("--host", default=DEFAULT_HOST, help="Hostname/IP of device or NSO")
+    parser.add_argument("--user", default=DEFAULT_USER, help="Username")
+    parser.add_argument("--password", default=DEFAULT_PASS, help="Password")
+    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Target device name (for NSO)")
+    parser.add_argument("--hostname", default="CATALYST9300", help="Hostname value")
+    args = parser.parse_args()
 
-    # url string to issue GET request
-    url = "https://{h}/restconf/data/Cisco-IOS-XE-native:native/hostname".format(h=HOST)
-    payload = "{\"hostname\": \"CATALYST9300\"}"
+    headers = {
+        'Content-Type': 'application/yang-data+json',
+        'Accept': 'application/yang-data+json'
+    }
 
-    # RESTCONF media types for REST API headers
-    headers = {'Content-Type': 'application/yang-data+json',
-               'Accept': 'application/yang-data+json'}
-    # this statement performs a PUT on the specified url
-    response = requests.request("PUT",url, auth=(USER, PASS),
-                            data=payload, headers=headers, verify=False)
-                            
-    # print the json that is returned
-    print(response.text)
+    if "nso" in args.host.lower() or args.device:
+        url = f"https://{args.host}/restconf/data/tailf-ncs:devices/device={args.device}/description"
+        payload = {"tailf-ncs:description": f"Managed device {args.device} ({args.hostname})"}
+    else:
+        url = f"https://{args.host}/restconf/data/Cisco-IOS-XE-native:native/hostname"
+        payload = {"hostname": args.hostname}
+
+    print(f"Sending PUT to {url}...")
+    response = requests.put(
+        url,
+        auth=(args.user, args.password),
+        json=payload,
+        headers=headers,
+        verify=False,
+        timeout=25
+    )
+
+    print(f"HTTP Status: {response.status_code}")
+    if response.text:
+        print(response.text)
+    return 0 if response.status_code in (200, 201, 204) else 1
+
 
 if __name__ == '__main__':
     sys.exit(main())

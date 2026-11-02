@@ -43,32 +43,43 @@ if __name__ == '__main__':
     
     parser = ArgumentParser(description='Select options.')
 
+    default_host = os.getenv('RESTCONF_HOST', os.getenv('NSO_HOST', 'sandbox-nso-1.cisco.com'))
+    default_user = os.getenv('RESTCONF_USER', os.getenv('NSO_USER', 'namansin'))
+    default_pass = os.getenv('DEVNET_RESTCONF_PASSWORD', os.getenv('NSO_PASSWORD', '#u*^x6^3t6DGEcD'))
+
     # Input parameters
-    parser.add_argument('-host', '--host', type=str, required=True,
+    parser.add_argument('-host', '--host', type=str, default=default_host,
                         help="The device IP or DN")
-    parser.add_argument('-user', '--username', type=str, default='cisco',
+    parser.add_argument('-user', '--username', type=str, default=default_user,
                         help="User credentials for the request")
+    parser.add_argument('-passwd', '--password', type=str, default=default_pass,
+                        help="Password for the request")
     parser.add_argument('-port', '--port', type=int, default=443,
                         help="Specify this if you want a non-default port")
+    parser.add_argument('-device', '--device', type=str, default='dist-rtr00',
+                        help="Device name (when targeting NSO)")
 
     args = parser.parse_args()
 
     username = args.username
-    password = os.getenv('DEVNET_RESTCONF_PASSWORD')
+    password = args.password
     if password is None:
         password = getpass()
     host = args.host
     port = str(args.port)
 
-    url = "https://" + host + ":" + port + "/restconf/data/Cisco-IOS-XE-native:native"
+    if "nso" in host.lower() or args.device:
+        url = f"https://{host}:{port}/restconf/data/tailf-ncs:devices/device={args.device}/config"
+    else:
+        url = f"https://{host}:{port}/restconf/data/Cisco-IOS-XE-native:native"
 
     headers = {
        "Content-Type": "application/yang-data+json",
        "Accept": "application/yang-data+json",
-       }
+    }
     
     try:
-        response = requests.request("GET", url, headers=headers, auth=(username,password), verify=False)
+        response = requests.request("GET", url, headers=headers, auth=(username, password), verify=False, timeout=30)
         response.raise_for_status()
     except Exception as e:
         print(e, file=sys.stderr)

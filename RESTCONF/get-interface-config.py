@@ -26,37 +26,47 @@
 #
 # This script retrieves entire interface configuration from a network element via RESTCONF
 
-# import the requests library
-import requests
+import os
 import sys
+import argparse
+import requests
 
 # disable warnings from SSL/TLS certificates
 requests.packages.urllib3.disable_warnings()
 
-# use the IP address or hostname of your Cat9300
-HOST = '172.26.198.63'
+# Configuration defaults (supports NSO and direct device)
+DEFAULT_HOST = os.getenv('RESTCONF_HOST', os.getenv('NSO_HOST', 'sandbox-nso-1.cisco.com'))
+DEFAULT_USER = os.getenv('RESTCONF_USER', os.getenv('NSO_USER', 'namansin'))
+DEFAULT_PASS = os.getenv('RESTCONF_PASSWORD', os.getenv('NSO_PASSWORD', '#u*^x6^3t6DGEcD'))
+DEFAULT_DEVICE = os.getenv('RESTCONF_DEVICE', 'dist-rtr00')
 
-# use your user credentials to access the Cat9300
-USER = 'cisco'
-PASS = 'cisco'
 
-
-# create a main() method
 def main():
-    """Main method that retrieves the Interface details from Cat9300 via RESTCONF."""
+    """Main method that retrieves the Interface details via RESTCONF."""
+    parser = argparse.ArgumentParser(description="Retrieve Interface Configuration via RESTCONF")
+    parser.add_argument("--host", default=DEFAULT_HOST, help="Hostname/IP of device or NSO")
+    parser.add_argument("--user", default=DEFAULT_USER, help="Username")
+    parser.add_argument("--password", default=DEFAULT_PASS, help="Password")
+    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Target device name (for NSO)")
+    args = parser.parse_args()
 
-    # url string to issue GET request
-    url = "https://{h}/restconf/data/ietf-interfaces:interfaces".format(h=HOST)
+    # Determine URL path based on target (NSO vs direct device)
+    if "nso" in args.host.lower() or args.device:
+        url = f"https://{args.host}/restconf/data/tailf-ncs:devices/device={args.device}/config/tailf-ned-cisco-ios:interface"
+    else:
+        url = f"https://{args.host}/restconf/data/ietf-interfaces:interfaces"
 
-    # RESTCONF media types for REST API headers
-    headers = {'Content-Type': 'application/yang-data+json',
-               'Accept': 'application/yang-data+json'}
-    # this statement performs a GET on the specified url
-    response = requests.get(url, auth=(USER, PASS),
-                            headers=headers, verify=False)
+    headers = {
+        'Content-Type': 'application/yang-data+json',
+        'Accept': 'application/yang-data+json'
+    }
 
-    # print the json that is returned
+    print(f"Connecting to {url}...")
+    response = requests.get(url, auth=(args.user, args.password), headers=headers, verify=False, timeout=20)
+    print(f"HTTP Status: {response.status_code}")
     print(response.text)
+    return 0 if response.status_code == 200 else 1
+
 
 if __name__ == '__main__':
     sys.exit(main())

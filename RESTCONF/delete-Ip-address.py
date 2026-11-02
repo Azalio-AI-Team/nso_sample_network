@@ -24,38 +24,57 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 #
-# This script deletes the Ip address of a interface using DELETE operation via RESTCONF 
+# This script deletes an interface using DELETE via RESTCONF
 
-# import the requests library
-import requests
+import os
 import sys
+import argparse
+import requests
 
 # disable warnings from SSL/TLS certificates
 requests.packages.urllib3.disable_warnings()
 
-# use the IP address or hostname of your Cat9300
-HOST = '172.26.198.63'
+# Configuration defaults (supports NSO and direct device)
+DEFAULT_HOST = os.getenv('RESTCONF_HOST', os.getenv('NSO_HOST', 'sandbox-nso-1.cisco.com'))
+DEFAULT_USER = os.getenv('RESTCONF_USER', os.getenv('NSO_USER', 'namansin'))
+DEFAULT_PASS = os.getenv('RESTCONF_PASSWORD', os.getenv('NSO_PASSWORD', '#u*^x6^3t6DGEcD'))
+DEFAULT_DEVICE = os.getenv('RESTCONF_DEVICE', 'dist-rtr00')
 
-# use your user credentials to access the Cat9300
-USER = 'cisco'
-PASS = 'cisco'
 
-
-# create a main() method
 def main():
-    """Main method that configures the Ip address for a interface via RESTCONF."""
+    """Main method that deletes an interface via RESTCONF."""
+    parser = argparse.ArgumentParser(description="Delete Interface via RESTCONF")
+    parser.add_argument("--host", default=DEFAULT_HOST, help="Hostname/IP of device or NSO")
+    parser.add_argument("--user", default=DEFAULT_USER, help="Username")
+    parser.add_argument("--password", default=DEFAULT_PASS, help="Password")
+    parser.add_argument("--device", default=DEFAULT_DEVICE, help="Target device name (for NSO)")
+    parser.add_argument("--interface", default="100", help="Loopback ID to delete")
+    args = parser.parse_args()
 
-    # url string to issue GET request
-    url = "https://172.26.198.63/restconf/data/Cisco-IOS-XE-native:native/interface/TenGigabitEthernet=1%2F0%2F10/ip/address/primary"
+    headers = {
+        'Content-Type': 'application/yang-data+json',
+        'Accept': 'application/yang-data+json'
+    }
 
-    # RESTCONF media types for REST API headers
-    headers = {'Content-Type': 'application/yang-data+json',
-               'Accept': 'application/yang-data+json'}
-    # this statement performs a DELETE on the specified url
-    response = requests.request("DELETE",url, auth=(USER, PASS),
-                             headers=headers, verify=False)                        
-    # print the json that is returned
-    print(response.text)
+    if "nso" in args.host.lower() or args.device:
+        url = f"https://{args.host}/restconf/data/tailf-ncs:devices/device={args.device}/config/tailf-ned-cisco-ios:interface/Loopback={args.interface}"
+    else:
+        url = f"https://{args.host}/restconf/data/Cisco-IOS-XE-native:native/interface/TenGigabitEthernet=1%2F0%2F10/ip/address/primary"
+
+    print(f"Sending DELETE to {url}...")
+    response = requests.delete(
+        url,
+        auth=(args.user, args.password),
+        headers=headers,
+        verify=False,
+        timeout=25
+    )
+
+    print(f"HTTP Status: {response.status_code}")
+    if response.text:
+        print(response.text)
+    return 0 if response.status_code in (200, 204) else 1
+
 
 if __name__ == '__main__':
     sys.exit(main())
