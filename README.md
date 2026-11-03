@@ -88,3 +88,83 @@ The root directory contains an enterprise-grade automation framework targeting *
 - [`main.py`](./main.py): Interactive terminal runner for network engineers.
 - [`tests/`](./tests/): Comprehensive unit test suite with 100% offline mock verification (`test_nso.py`, `test_device_manager.py`, `test_port_blocking.py`, `test_topology_manager.py`).
 - [`VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md`](./VODAFONE_PRESENTATION_WORKFLOW_AND_SCRIPT.md): Complete demonstration and presentation runbook.
+
+---
+
+## Cisco DevNet NSO Sandbox Topology & Multi-Platform Architecture
+
+The repository's NSO packages and orchestration scenarios are modeled around the official [Cisco DevNet Reservable NSO Sandbox](https://developer.cisco.com/sandbox/detail/nso-sandbox) multi-tier network topology:
+
+```mermaid
+graph TD
+    subgraph WAN_Internet ["Internet / External"]
+        INET["internet-rtr01<br/>10.10.20.181 (SSH:22)<br/>Cisco IOS-XE"]
+    end
+
+    subgraph Security_Perimeter ["Perimeter Security"]
+        FW["edge-firewall01<br/>10.10.20.171 (Telnet:23)<br/>Cisco ASA"]
+        EDGE_SW["edge-sw01<br/>10.10.20.172 (Telnet:23)<br/>Cisco IOS"]
+    end
+
+    subgraph Core_Tier ["Core Routing Tier"]
+        CORE1["core-rtr01<br/>10.10.20.173 (Telnet:23)<br/>Cisco IOS-XR"]
+        CORE2["dev-core-rtr01<br/>10.10.20.174 (Telnet:23)<br/>Cisco IOS-XR"]
+    end
+
+    subgraph Distribution_Tier ["Distribution & Switching Tier"]
+        DIST_R1["dist-rtr01<br/>10.10.20.175 (SSH:22)<br/>Cisco IOS-XE"]
+        DIST_R2["dev-dist-rtr01<br/>10.10.20.176 (SSH:22)<br/>Cisco IOS-XE"]
+        DIST_SW1["dist-sw01<br/>10.10.20.177 (SSH:22)<br/>Cisco NX-OS"]
+        DIST_SW2["dev-dist-sw01<br/>10.10.20.178 (SSH:22)<br/>Cisco NX-OS"]
+    end
+
+    INET --- FW
+    FW --- EDGE_SW
+    EDGE_SW --- CORE1
+    EDGE_SW --- CORE2
+    CORE1 --- DIST_R1
+    CORE1 --- DIST_SW1
+    CORE2 --- DIST_R2
+    CORE2 --- DIST_SW2
+```
+
+### 1. Topology Inventory & Management Protocol Partitioning
+
+> ⚠️ **CRITICAL PROTOCOL CONSTRAINT**: The physical/virtual devices in this sandbox strictly partition management access by transport protocol. Connecting with the wrong protocol or port will cause connection refusal:
+> - **Telnet Devices (Port 23)**: `edge-firewall01` (`.171`), `edge-sw01` (`.172`), `core-rtr01` (`.173`), `dev-core-rtr01` (`.174`).
+> - **SSH Devices (Port 22)**: `dist-rtr01` (`.175`), `dev-dist-rtr01` (`.176`), `dist-sw01` (`.177`), `dev-dist-sw01` (`.178`), `internet-rtr01` (`.181`).
+
+| Network Tier | Device Name | Management IP | Protocol | Port | Network Element Driver (NED) | Role / Function |
+|---|---|---|---|---|---|---|
+| **Firewall** | `edge-firewall01` | `10.10.20.171` | **Telnet** | 23 | `cisco-asa-cli-6.18` | Perimeter firewall & ACL enforcement |
+| **Edge Access** | `edge-sw01` | `10.10.20.172` | **Telnet** | 23 | `cisco-ios-cli-6.109` | Campus edge switch |
+| **Core** | `core-rtr01` | `10.10.20.173` | **Telnet** | 23 | `cisco-iosxr-cli-7.65` | Backbone core router (IOS-XR) |
+| **Core Dev** | `dev-core-rtr01` | `10.10.20.174` | **Telnet** | 23 | `cisco-iosxr-cli-7.65` | Staging core router (IOS-XR) |
+| **Distribution** | `dist-rtr01` | `10.10.20.175` | **SSH** | 22 | `cisco-ios-cli-6.109` | Production aggregation router (IOS-XE) |
+| **Dist Dev** | `dev-dist-rtr01` | `10.10.20.176` | **SSH** | 22 | `cisco-ios-cli-6.109` | Staging aggregation router (IOS-XE) |
+| **Dist Switch** | `dist-sw01` | `10.10.20.177` | **SSH** | 22 | `cisco-nx-cli-5.27` | Data center aggregation switch (NX-OS) |
+| **Dist Sw Dev** | `dev-dist-sw01` | `10.10.20.178` | **SSH** | 22 | `cisco-nx-cli-5.27` | Staging data center switch (NX-OS) |
+| **Internet / WAN** | `internet-rtr01` | `10.10.20.181` | **SSH** | 22 | `cisco-ios-cli-6.109` | Gateway internet uplink router |
+
+### 2. Standalone Packages & Multi-Platform Capabilities
+
+1. **[`nso_topology_manager/`](./nso_topology_manager/)**:
+   - High-level topology orchestration package aligning device configurations to sandbox roles.
+   - `topology_models.py`: Strongly-typed dataclasses (`NetworkNode`, `NetworkTier`), 9-node metadata, and NED definitions.
+   - `topology_manager.py`: Supports CLI actions:
+     - `--action audit`: Displays live sync status, reachability, and tier classification across all 9 devices.
+     - `--action deploy-baseline`: Deploys tier-based Loopbacks (`172.16.x.x/32`) and interface descriptions.
+     - `--action configure-loopback`: Provisions platform-aware Loopbacks (translating IOS, XR, and NX-OS formats).
+     - `--action delete-loopback`: Removes loopback interfaces cleanly.
+     - `--action set-description`: Updates interface descriptions.
+     - `--action verify-sync`: Verifies CDB out-of-band state across all nodes.
+     - `--action rollback`: Restores interface configurations.
+
+2. **Core NSO Client Engine ([`nso_client.py`](./nso_client.py) & [`nso_scenarios.py`](./nso_scenarios.py))**:
+   - **Multi-NED Loopback Management**: Automatically adapts payloads:
+     - **IOS-XE**: `tailf-ned-cisco-ios:interface/Loopback={id}` with `primary.address` and `mask`.
+     - **IOS-XR**: `tailf-ned-cisco-ios-xr:interface/Loopback={id}` with `ipv4.address.ip` and `mask`.
+     - **NX-OS**: `tailf-ned-cisco-nx:interface/loopback={id}` (lowercase) with `ipaddr` in CIDR notation (e.g. `172.16.2.1/32`).
+   - **Layer 4 Security & Extended ACLs**: Corrected extended named ACL model (`tailf-ned-cisco-ios:ext-named-acl` with `ext-access-list-rule`) and interface `access-group` binding.
+   - **Management Interface Protection**: Safety guardrails preventing ACL attachment or shutdown on out-of-band management interfaces (e.g., `GigabitEthernet1` on `10.10.20.175`).
+   - **Complete Scenario Suite**: 13 automated scenarios covering fleet discovery, interface inspection, declarative provisioning, intent drift check, out-of-band sync check, policy guardrails, teardown, e2e orchestration, CDB lifecycle management, Layer 4 ACL port filtering, interface isolation, multi-platform loopbacks, and full fleet topology health audit.

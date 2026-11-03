@@ -40,6 +40,24 @@ Reliability across varied network environments requires multi-tiered verificatio
 - **Integration & Smoke Tests**: Where DevNet sandboxes are available, live smoke verification should validate device reachability and payload compatibility before release.
 - **Static Quality**: Scripts must pass code quality checks (`ruff check .`, `mypy --ignore-missing-imports`).
 
+### VI. Multi-Platform Network Topology & Protocol Alignment Constraints
+To ensure automated configuration succeeds across heterogeneous hardware and virtual appliances in the Cisco DevNet Sandbox topology:
+- **Strict Management Protocol Partitioning**:
+  - Devices `10.10.20.171` (`edge-firewall01`), `10.10.20.172` (`edge-sw01`), `10.10.20.173` (`core-rtr01`), and `10.10.20.174` (`dev-core-rtr01`) are **Telnet** devices operating strictly on port **23**.
+  - Devices `10.10.20.175` (`dist-rtr01`), `10.10.20.176` (`dev-dist-rtr01`), `10.10.20.177` (`dist-sw01`), `10.10.20.178` (`dev-dist-sw01`), and `10.10.20.181` (`internet-rtr01`) are **SSH** devices operating strictly on port **22**.
+  - Automation scripts and NSO CDB device configurations MUST respect this division. Connecting over SSH to telnet-only endpoints or Telnet to SSH-only endpoints is strictly prohibited.
+- **SSH Key Onboarding & Sync-From Prerequisite**:
+  - Before performing any transactional configuration commits across SSH-managed devices, SSH host keys must be fetched (`fetch-ssh-host-keys` / `fetch_host_keys`).
+  - Fleet-wide state synchronization (`sync-from`) must be verified to ensure devices are `in-sync` in NSO CDB before executing mutation payloads.
+- **Multi-NED YANG Data Model Compatibility**:
+  - Code provisioning interfaces, loopbacks, or ACLs must branch based on the device's Network Element Driver (NED):
+    - **Cisco IOS-XE** (`cisco-ios-cli-6.109`): Interface `tailf-ned-cisco-ios:interface/Loopback={id}`, IP `primary.address` and `mask`. Extended ACLs use `tailf-ned-cisco-ios:ip/access-list/extended/ext-named-acl={name}` with `ext-access-list-rule`.
+    - **Cisco IOS-XR** (`cisco-iosxr-cli-7.65`): Interface `tailf-ned-cisco-ios-xr:interface/Loopback={id}`, IP `ipv4.address.ip` and `mask`.
+    - **Cisco NX-OS** (`cisco-nx-cli-5.27`): Interface `tailf-ned-cisco-nx:interface/loopback={id}` (lowercase), IP `ipaddr` formatted in CIDR notation (e.g. `172.16.2.1/32`).
+    - **Cisco ASA** (`cisco-asa-cli-6.18`): Adaptive Security Appliance CLI data models.
+- **Management Interface Protection Guardrail**:
+  - Never apply traffic-filtering ACLs, port-blocking policies, or administrative `shutdown` commands to out-of-band management interfaces (e.g. `GigabitEthernet1` on `dist-rtr01` at `10.10.20.175`). All security enforcement and interface isolation tests must target dedicated test interfaces or transit links.
+
 ## Technology Standards & Tooling
 
 ### Python Runtime & Environment
@@ -73,4 +91,4 @@ Reliability across varied network environments requires multi-tiered verificatio
      - **PATCH**: Clarifications, formatting, and non-semantic refinements.
   3. Amendment logging in the project history.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-02 | **Last Amended**: 2026-11-02
+**Version**: 1.2.0 | **Ratified**: 2026-11-02 | **Last Amended**: 2026-11-03

@@ -142,3 +142,43 @@ flowchart TD
   - Update `README.md` within the affected folder and verify [`PACKAGES.md`](./PACKAGES.md).
   - Run `ruff check .` to ensure clean code style.
   - Verify no passwords, tokens, or internal IP addresses are committed.
+
+---
+
+## 7. Cisco DevNet NSO Sandbox Topology & Device Access Guidelines
+
+Agents operating in this repository MUST strictly follow the Cisco DevNet Sandbox topology and device connectivity rules:
+
+### Topology & Management Protocol Division
+
+| Tier | Device Name | IP Address | Management Protocol | NED Type |
+|---|---|---|---|---|
+| **Firewall** | `edge-firewall01` | `10.10.20.171` | **Telnet** (Port 23) | `cisco-asa-cli-6.18` |
+| **Edge Access** | `edge-sw01` | `10.10.20.172` | **Telnet** (Port 23) | `cisco-ios-cli-6.109` |
+| **Core** | `core-rtr01` | `10.10.20.173` | **Telnet** (Port 23) | `cisco-iosxr-cli-7.65` |
+| **Core Dev** | `dev-core-rtr01` | `10.10.20.174` | **Telnet** (Port 23) | `cisco-iosxr-cli-7.65` |
+| **Distribution** | `dist-rtr01` | `10.10.20.175` | **SSH** (Port 22) | `cisco-ios-cli-6.109` |
+| **Dist Dev** | `dev-dist-rtr01`| `10.10.20.176` | **SSH** (Port 22) | `cisco-ios-cli-6.109` |
+| **Dist Switch** | `dist-sw01` | `10.10.20.177` | **SSH** (Port 22) | `cisco-nx-cli-5.27` |
+| **Dist Sw Dev** | `dev-dist-sw01` | `10.10.20.178` | **SSH** (Port 22) | `cisco-nx-cli-5.27` |
+| **Internet / WAN** | `internet-rtr01`| `10.10.20.181` | **SSH** (Port 22) | `cisco-ios-cli-6.109` |
+
+### Mandatory Operating Constraints
+
+1. **Protocol Separation**:
+   - `.171` through `.174` only accept **Telnet (port 23)**.
+   - `.175` through `.178` and `.181` only accept **SSH (port 22)**.
+   - Never configure SSH port 22 on `.171`–`.174` or Telnet port 23 on `.175`–`.181`.
+2. **SSH Host Key Onboarding & Fleet Sync**:
+   - For all SSH devices, execute `fetch-ssh-host-keys` before connecting.
+   - Perform fleet-wide `sync-from` to ensure all 9 nodes report `result: true` and `in-sync` before applying configuration changes.
+3. **Multi-NED YANG Data Models**:
+   - **IOS-XE** (`cisco-ios-cli-6.109`): `tailf-ned-cisco-ios:interface/Loopback={id}` with `primary.address` and `mask`. Extended ACLs use `tailf-ned-cisco-ios:ip/access-list/extended/ext-named-acl={name}` with `ext-access-list-rule`.
+   - **IOS-XR** (`cisco-iosxr-cli-7.65`): `tailf-ned-cisco-ios-xr:interface/Loopback={id}` with `ipv4.address.ip` and `mask`.
+   - **NX-OS** (`cisco-nx-cli-5.27`): `tailf-ned-cisco-nx:interface/loopback={id}` (lowercase) with `ipaddr` in CIDR notation (e.g. `172.16.2.1/32`).
+4. **Management Interface Safety (Blast Radius)**:
+   - On `dist-rtr01` (`10.10.20.175`), management traffic runs over `GigabitEthernet1`.
+   - NEVER apply blocking ACLs or execute `shutdown` on `GigabitEthernet1`. Target test interfaces (e.g. `Loopback155`) or transit links (`GigabitEthernet2`).
+5. **Packages & Scenarios**:
+   - Use [`nso_topology_manager`](./nso_topology_manager) for tier-based baseline provisioning and health audits.
+   - Use [`nso_scenarios.py`](./nso_scenarios.py) and [`main.py`](./main.py) for the complete 13-scenario test and orchestration pipeline.
