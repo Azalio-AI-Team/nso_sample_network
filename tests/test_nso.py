@@ -5,7 +5,8 @@ Run with: uv run python -m unittest tests/test_nso.py
 
 import os
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from nso_client import NSOClient
 
 
@@ -102,6 +103,35 @@ class TestNSOScenarios(unittest.TestCase):
         with patch.object(self.client.session, "request", return_value=mock_resp_204):
             st, _ = self.client.enable_interface("dist-rtr01", "GigabitEthernet", "0/2")
             self.assertEqual(st, 204)
+
+    def test_04_multi_platform_loopbacks_mock(self):
+        """Scenario 12: Test multi-platform loopback creation across IOS-XE, IOS-XR, NX-OS."""
+        mock_resp_201 = MagicMock(status_code=201, text="Created")
+        mock_resp_200 = MagicMock(status_code=200)
+        mock_resp_200.json.return_value = {"status": "ok"}
+
+        # IOS-XE
+        with patch.object(self.client.session, "request", return_value=mock_resp_201) as mock_req:
+            st, _ = self.client.set_loopback_interface("dist-rtr01", "105", "172.16.1.5", "255.255.255.255")
+            self.assertEqual(st, 201)
+            self.assertIn("tailf-ned-cisco-ios:interface/Loopback=105", mock_req.call_args[1]["url"])
+
+        # IOS-XR
+        with patch.object(self.client.session, "request", return_value=mock_resp_201) as mock_req:
+            st, _ = self.client.set_loopback_interface("core-rtr01", "105", "172.16.0.5", "255.255.255.255", platform="iosxr")
+            self.assertEqual(st, 201)
+            self.assertIn("tailf-ned-cisco-ios-xr:interface/Loopback=105", mock_req.call_args[1]["url"])
+
+        # NX-OS
+        with patch.object(self.client.session, "request", return_value=mock_resp_201) as mock_req:
+            st, _ = self.client.set_loopback_interface("dist-sw01", "105", "172.16.2.5", "255.255.255.255", platform="nx")
+            self.assertEqual(st, 201)
+            self.assertIn("tailf-ned-cisco-nx:interface/loopback=105", mock_req.call_args[1]["url"])
+
+        # Interface description update
+        with patch.object(self.client.session, "request", return_value=mock_resp_200):
+            st, _ = self.client.update_interface_description("dist-rtr01", "GigabitEthernet", "0/1", "Test desc")
+            self.assertEqual(st, 200)
 
 
 if __name__ == "__main__":

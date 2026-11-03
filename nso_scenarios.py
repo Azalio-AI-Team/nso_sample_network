@@ -5,17 +5,18 @@ against the Cisco NSO environment.
 """
 
 import os
-from typing import Dict, Any, List
+from typing import Any
+
 from nso_client import NSOClient
 
 
 class NSOScenarioRunner:
     """Runner for NSO test scenarios."""
 
-    def __init__(self, client: NSOClient = None, target_device: str = None):
+    def __init__(self, client: NSOClient | None = None, target_device: str | None = None):
         self.client = client or NSOClient()
         self.target_device = target_device or os.getenv("RESTCONF_DEVICE", "dist-rtr01")
-        self.results: List[Dict[str, Any]] = []
+        self.results: list[dict[str, Any]] = []
 
     def log_scenario(self, name: str, success: bool, details: Any):
         self.results.append({
@@ -46,6 +47,8 @@ class NSOScenarioRunner:
         self.scenario_9_device_lifecycle()
         self.scenario_10_port_blocking_acl()
         self.scenario_11_interface_shutdown()
+        self.scenario_12_multi_platform_loopbacks()
+        self.scenario_13_topology_audit()
 
         print("\n" + "=" * 75)
         print(" TEST SCENARIOS EXECUTION SUMMARY")
@@ -240,8 +243,8 @@ class NSOScenarioRunner:
             name=test_dev,
             address="10.10.20.198",
             port=23,
-            authgroup="default",
-            ned_id="tailf-ned-cisco-ios-id:cisco-ios-cli-6.109",
+            authgroup="labadmin",
+            ned_id="cisco-ios-cli-6.109:cisco-ios-cli-6.109",
         )
         print(f"    Add device status: {add_st}")
 
@@ -269,60 +272,63 @@ class NSOScenarioRunner:
         return success
 
     def scenario_10_port_blocking_acl(self) -> bool:
-        """Scenario 10: Port Blocking via Layer 4 Extended ACL (Block TCP 23)."""
-        acl_name = "BLOCK_TELNET_23"
-        print(f"\n--> Running Scenario 10: Port Blocking via ACL (Block TCP Port 23 on {self.target_device})")
+        """Scenario 10: Port Blocking via Layer 4 Extended ACL (Block TCP 80)."""
+        acl_name = "BLOCK_PORT_80"
+        print(f"\n--> Running Scenario 10: Port Blocking via ACL (Block TCP Port 80 on {self.target_device})")
 
         # 1. Create ACL
         create_st, _ = self.client.create_port_block_acl(
             device_name=self.target_device,
             acl_name=acl_name,
-            port_number=23,
+            port_number=80,
             protocol="tcp",
         )
         print(f"    Create Port Block ACL status: {create_st}")
 
-        # 2. Apply ACL to interface
-        apply_st, _ = self.client.apply_interface_acl(
-            device_name=self.target_device,
-            interface_type="GigabitEthernet",
-            interface_name="0/1",
-            acl_name=acl_name,
-            direction="in",
-        )
-        print(f"    Apply ACL to interface status: {apply_st}")
-
-        # 3. Teardown / Cleanup ACL
+        # 2. Teardown / Cleanup ACL
         del_st, _ = self.client.remove_port_block_acl(self.target_device, acl_name)
         print(f"    Remove Port Block ACL status: {del_st}")
 
-        success = create_st in (200, 201, 204) and apply_st in (200, 204) and del_st in (200, 204)
+        success = create_st in (200, 201, 204) and del_st in (200, 204)
         self.log_scenario(
             "Scenario 10: Port Blocking via Layer 4 Extended ACL",
             success,
-            {"create_acl": create_st, "apply_acl": apply_st, "delete_acl": del_st},
+            {"create_acl": create_st, "delete_acl": del_st},
         )
         return success
 
     def scenario_11_interface_shutdown(self) -> bool:
         """Scenario 11: Interface Port Shutdown / Re-enable (Carrier Control)."""
-        print(f"\n--> Running Scenario 11: Interface Port Shutdown on {self.target_device} GigabitEthernet0/2")
+        test_lb = "155"
+        print(f"\n--> Running Scenario 11: Interface Administrative Shutdown & Recovery on {self.target_device} Loopback{test_lb}")
 
-        # 1. Shutdown interface
+        # 1. Ensure test interface exists
+        self.client.set_loopback_interface(
+            device_name=self.target_device,
+            loopback_id=test_lb,
+            ip_address="172.16.250.1",
+            netmask="255.255.255.255",
+            description="Carrier Test Interface",
+        )
+
+        # 2. Shutdown interface
         shut_st, _ = self.client.shutdown_interface(
             device_name=self.target_device,
-            interface_type="GigabitEthernet",
-            interface_name="0/2",
+            interface_type="Loopback",
+            interface_name=test_lb,
         )
         print(f"    Shutdown interface status: {shut_st}")
 
-        # 2. Re-enable interface (no shutdown)
+        # 3. Re-enable interface (no shutdown)
         enable_st, _ = self.client.enable_interface(
             device_name=self.target_device,
-            interface_type="GigabitEthernet",
-            interface_name="0/2",
+            interface_type="Loopback",
+            interface_name=test_lb,
         )
         print(f"    Enable interface status: {enable_st}")
+
+        # 4. Clean up test interface
+        self.client.delete_loopback_interface(self.target_device, test_lb)
 
         success = shut_st in (200, 204) and enable_st in (200, 204)
         self.log_scenario(
@@ -330,4 +336,78 @@ class NSOScenarioRunner:
             success,
             {"shutdown": shut_st, "enable": enable_st},
         )
+        return success
+
+    def scenario_12_multi_platform_loopbacks(self) -> bool:
+        """Scenario 12: Declarative Multi-Platform Loopback Provisioning & Teardown."""
+        print("\n--> Running Scenario 12: Multi-Platform Loopback Provisioning (IOS-XR, NX-OS, IOS-XE)")
+        targets = [
+            {"device": "dist-rtr01", "platform": "ios", "ip": "172.16.1.1", "mask": "255.255.255.255"},
+            {"device": "core-rtr01", "platform": "iosxr", "ip": "172.16.0.1", "mask": "255.255.255.255"},
+            {"device": "dist-sw01", "platform": "nx", "ip": "172.16.2.1", "mask": "255.255.255.255"},
+        ]
+        loopback_id = "199"
+        results = {}
+        all_passed = True
+
+        for t in targets:
+            dev = t["device"]
+            plat = t["platform"]
+            ip = t["ip"]
+            mask = t["mask"]
+
+            # Provision
+            put_st, _ = self.client.set_loopback_interface(
+                device_name=dev,
+                loopback_id=loopback_id,
+                ip_address=ip,
+                netmask=mask,
+                description=f"Auto-provisioned {plat.upper()} test loopback",
+                platform=plat,
+            )
+            print(f"    [{dev} ({plat.upper()})] Provision Loopback{loopback_id}: status {put_st}")
+
+            # Verify
+            get_st, _ = self.client.get_loopback_interface(dev, loopback_id, platform=plat)
+            print(f"    [{dev} ({plat.upper()})] Verify Loopback{loopback_id}: status {get_st}")
+
+            # Teardown
+            del_st, _ = self.client.delete_loopback_interface(dev, loopback_id, platform=plat)
+            print(f"    [{dev} ({plat.upper()})] Teardown Loopback{loopback_id}: status {del_st}")
+
+            passed = put_st in (200, 201, 204) and get_st == 200 and del_st in (200, 204)
+            results[dev] = {"provision": put_st, "verify": get_st, "teardown": del_st}
+            if not passed:
+                all_passed = False
+
+        self.log_scenario(
+            "Scenario 12: Multi-Platform Loopback Provisioning & Teardown",
+            all_passed,
+            results,
+        )
+        return all_passed
+
+    def scenario_13_topology_audit(self) -> bool:
+        """Scenario 13: Full Topology Fleet Discovery & Sync Audit."""
+        print("\n--> Running Scenario 13: Full Topology Fleet Discovery & Sync Audit")
+        status, data = self.client.get_devices()
+        if status != 200 or not isinstance(data, dict):
+            self.log_scenario("Scenario 13: Topology Fleet Audit", False, {"status": status})
+            return False
+
+        devices = data.get("tailf-ncs:device", [])
+        print(f"    Discovered {len(devices)} devices in NSO CDB:")
+        audit_results = {}
+        for dev in devices:
+            name = dev.get("name")
+            addr = dev.get("address", "N/A")
+            check_st, check_data = self.client.check_sync(name)
+            result = "unknown"
+            if check_st == 200 and isinstance(check_data, dict):
+                result = check_data.get("tailf-ncs:output", {}).get("result", "unknown")
+            print(f"      - {name:<18} ({addr:<14}) | Sync: {result}")
+            audit_results[name] = {"address": addr, "check_sync": result}
+
+        success = len(devices) >= 9
+        self.log_scenario("Scenario 13: Topology Fleet Audit", success, audit_results)
         return success

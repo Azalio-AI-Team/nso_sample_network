@@ -1,6 +1,6 @@
 # Repository Package Catalog & Architecture Guide
 
-This document provides a comprehensive architectural breakdown of every sample package, script, and component in the `python_code_samples_network` repository. It explains **why each package exists**, **how it works**, its **target network devices**, **protocols**, **YANG models/APIs**, **parameters**, and **execution guidelines**.
+This document provides a comprehensive architectural breakdown of every sample package, script, and component in the `python_code_samples_network` repository. It explains **why each package exists**, **how it works**, its **target network devices**, **protocols**, **YANG models/APIs**, **parameters**, and **execution guidelines**. Covers all 23 packages and the centralized Cisco NSO orchestration framework.
 
 ---
 
@@ -58,6 +58,7 @@ graph TD
 | `snmp_entity/` | SNMPv2c / UDP 161 | Cisco IOS-XE | `ENTITY-MIB::entPhysicalDescr` | Off-box |
 | `nso_device_manager/` | RESTCONF (RFC 8040) | Cisco NSO / All NEDs | `tailf-ncs:devices` | Off-box |
 | `nso_port_blocking/` | RESTCONF (RFC 8040) | Cisco NSO / Cisco IOS | `tailf-ned-cisco-ios:ip/access-list`, `interface` | Off-box |
+| `nso_topology_manager/` | RESTCONF (RFC 8040) | Cisco NSO (IOS, XR, NX-OS) | `tailf-ncs:devices`, multi-NED interfaces | Off-box |
 | `root` (`nso_client.py`) | RESTCONF (RFC 8040) | Cisco NSO / NCS | `tailf-ncs`, `tailf-ned-cisco-ios` | Off-box |
 
 ---
@@ -272,6 +273,21 @@ graph TD
 
 ---
 
+### 23. `nso_topology_manager/`
+- **Why it is there**: Multi-platform topology orchestrator addressing the complete DevNet Reservable NSO Sandbox layout (Core, Distribution, Edge, and Firewall tiers across IOS-XE, IOS-XR, and NX-OS). Automates tier-based device classification, multi-NED Loopback interface provisioning, interface description standardization, fleet health audits, baseline configuration, and safety rollbacks.
+- **How it works**: Uses `topology_models.py` defining full 9-node metadata (IPs, management protocols Telnet vs SSH, NED IDs, and network tiers). Uses `NSOTopologyManager` in `topology_manager.py` to interact with Cisco NSO via RESTCONF, translating interface and Loopback operations across `cisco-ios-cli-6.109` (`Loopback`), `cisco-iosxr-cli-7.65` (`Loopback`), and `cisco-nx-cli-5.27` (`loopback` with CIDR notation).
+- **Scripts in Package**:
+  - `topology_models.py`: Strongly-typed topology models, tier definitions (`CORE`, `DISTRIBUTION`, `EDGE`, `INTERNET`), and 9-node inventory metadata.
+  - `topology_manager.py`: Complete CLI and module supporting `--action {audit,deploy-baseline,configure-loopback,delete-loopback,set-description,verify-sync,rollback}`.
+  - `requirements.txt`: Lightweight dependencies (`requests`, `urllib3`).
+  - `README.md`: Architectural documentation, topology layout matrix, and verification commands.
+- **Verification**:
+  ```bash
+  python nso_topology_manager/topology_manager.py --action audit
+  ```
+
+---
+
 ## 3. Centralized Cisco NSO Automation Engine (Root Framework)
 
 In addition to individual sample packages, the repository root features an enterprise-grade automation framework targeting **Cisco Network Services Orchestrator (NSO / NCS)** via RESTCONF:
@@ -311,7 +327,7 @@ sequenceDiagram
      - `sync_from(device_name)`: Pulls live device configuration into NSO CDB.
 
 2. **`nso_scenarios.py`**:
-   - Implements 8 production-grade network automation scenarios:
+   - Implements 13 production-grade network automation scenarios:
      - **Scenario 1**: Fleet Discovery (Query all managed devices).
      - **Scenario 2**: Interface Configuration Inspection.
      - **Scenario 3**: Declarative Loopback Interface Provisioning.
@@ -320,6 +336,11 @@ sequenceDiagram
      - **Scenario 6**: Policy Enforcement & Guardrails.
      - **Scenario 7**: Interface Teardown & Clean Up.
      - **Scenario 8**: Full End-to-End Orchestration Pipeline.
+     - **Scenario 9**: Onboard & Update New Network Device (CDB Lifecycle).
+     - **Scenario 10**: Layer 4 Port-Level Security (Extended ACL Enforcement).
+     - **Scenario 11**: Interface Administrative State Isolation (Shutdown/Enable).
+     - **Scenario 12**: Multi-Platform Loopback Orchestration (IOS-XE, IOS-XR, NX-OS).
+     - **Scenario 13**: Full Fleet Topology Health & Sync Audit.
 
 3. **`main.py`**:
    - Interactive terminal console allowing network engineers to select and execute any scenario with real-time feedback.

@@ -6,11 +6,33 @@ and running operational actions (check-sync, compare-config, sync-from, fetch-ss
 """
 
 import os
-import urllib3
+from typing import Any
+
 import requests
-from typing import Any, Dict, Optional, Tuple
+import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _load_env_defaults():
+    """Load defaults from local .env if present without external dependencies."""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.isfile(env_path):
+        try:
+            with open(env_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip('"').strip("'")
+                        if k not in os.environ:
+                            os.environ[k] = v
+        except OSError:
+            pass
+
+
+_load_env_defaults()
 
 
 class NSOClient:
@@ -18,13 +40,19 @@ class NSOClient:
 
     def __init__(
         self,
-        host: Optional[str] = None,
-        port: Optional[int] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        scheme: Optional[str] = None,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        scheme: str | None = None,
     ):
-        self.host = host or os.getenv("NSO_HOST", "sandbox-nso-1.cisco.com")
+        self.host = (
+            host
+            or os.getenv("NSO_HOST")
+            or os.getenv("RESTCONF_HOST")
+            or (os.getenv("nso1_web", "").split("://")[-1].split(":")[0] if os.getenv("nso1_web") else None)
+            or "sandbox-nso-1.cisco.com"
+        )
         
         # Default port: check env var, else infer from host (8080 for private lab IP, 443 for public sandbox)
         if port is not None:
@@ -36,9 +64,21 @@ class NSOClient:
         else:
             self.port = 443
 
-        self.username = username or os.getenv("NSO_USER", "developer")
+        self.username = (
+            username
+            or os.getenv("NSO_USER")
+            or os.getenv("nso_username")
+            or os.getenv("RESTCONF_USER", "developer")
+        )
         # Strict zero-hardcoded-secrets: read from environment or empty default
-        self.password = password or os.getenv("NSO_PASSWORD") or os.getenv("DEVNET_RESTCONF_PASSWORD") or ""
+        self.password = (
+            password
+            or os.getenv("NSO_PASSWORD")
+            or os.getenv("nso_password")
+            or os.getenv("DEVNET_RESTCONF_PASSWORD")
+            or os.getenv("RESTCONF_PASSWORD")
+            or ""
+        )
 
         # Scheme autodetection: if port is 8080 or 80, default to http; otherwise https
         if scheme:
@@ -67,8 +107,8 @@ class NSOClient:
         method: str,
         path: str,
         is_operation: bool = False,
-        data: Optional[Dict[str, Any]] = None,
-        timeout: int = 30,
+        data: dict[str, Any] | None = None,
+        timeout: int = 60,
     ) -> requests.Response:
         """Execute a RESTCONF HTTP request with explicit timeout."""
         base = self.base_ops_url if is_operation else self.base_data_url
@@ -83,32 +123,54 @@ class NSOClient:
 
     # --- High-level NSO Query Methods ---
 
-    def get_devices(self) -> Tuple[int, Any]:
+    def get_devices(self) -> tuple[int, Any]:
         """Retrieve the list of all managed devices."""
         resp = self.request("GET", "tailf-ncs:devices/device?fields=name;address;port;authgroup;device-type")
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def get_device(self, device_name: str) -> Tuple[int, Any]:
+    def get_device(self, device_name: str) -> tuple[int, Any]:
         """Retrieve a single device from NSO CDB."""
         resp = self.request("GET", f"tailf-ncs:devices/device={device_name}")
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def get_services(self) -> Tuple[int, Any]:
+    def get_services(self) -> tuple[int, Any]:
         """Retrieve defined router services."""
         resp = self.request("GET", "router:router")
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def get_device_interfaces(self, device_name: str) -> Tuple[int, Any]:
+    def get_device_interfaces(self, device_name: str) -> tuple[int, Any]:
         """Retrieve interface configuration for a specific Cisco IOS device."""
         resp = self.request("GET", f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface")
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def get_loopback_interface(self, device_name: str, loopback_id: str) -> Tuple[int, Any]:
-        """Retrieve details of a specific Loopback interface on a Cisco IOS device."""
-        resp = self.request(
-            "GET",
-            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}"
-        )
+    def _detect_platform(self, device_name: str, platform: str | None = None) -> str:
+        """Infer target platform family (ios, iosxr, nx) from platform or device name."""
+        if platform:
+            p = platform.lower()
+            if "xr" in p:
+                return "iosxr"
+            if "nx" in p:
+                return "nx"
+            return "ios"
+        dev = device_name.lower()
+        if "core" in dev or "xr" in dev:
+            return "iosxr"
+        if "sw01" in dev or "nx" in dev:
+            return "nx"
+        return "ios"
+
+    def get_loopback_interface(
+        self, device_name: str, loopback_id: str, platform: str | None = None
+    ) -> tuple[int, Any]:
+        """Retrieve details of a specific Loopback interface across IOS-XE, IOS-XR, or NX-OS."""
+        plat = self._detect_platform(device_name, platform)
+        if plat == "iosxr":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios-xr:interface/Loopback={loopback_id}"
+        elif plat == "nx":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-nx:interface/loopback={loopback_id}"
+        else:
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}"
+        resp = self.request("GET", path)
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
     def set_loopback_interface(
@@ -118,35 +180,98 @@ class NSOClient:
         ip_address: str,
         netmask: str,
         description: str = "",
-    ) -> Tuple[int, str]:
-        """Create or replace a Loopback interface using PUT."""
-        payload = {
-            "tailf-ned-cisco-ios:Loopback": {
-                "name": str(loopback_id),
-                "description": description,
-                "ip": {
-                    "address": {
-                        "primary": {
-                            "address": ip_address,
+        platform: str | None = None,
+    ) -> tuple[int, str]:
+        """Create or replace a Loopback interface using PUT across IOS-XE, IOS-XR, or NX-OS."""
+        plat = self._detect_platform(device_name, platform)
+        if plat == "iosxr":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios-xr:interface/Loopback={loopback_id}"
+            payload = {
+                "tailf-ned-cisco-ios-xr:Loopback": {
+                    "id": str(loopback_id),
+                    "description": description,
+                    "ipv4": {
+                        "address": {
+                            "ip": ip_address,
                             "mask": netmask,
                         }
-                    }
-                },
+                    },
+                }
             }
-        }
-        resp = self.request(
-            "PUT",
-            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}",
-            data=payload,
-        )
+        elif plat == "nx":
+            # Convert subnet mask to CIDR prefix length if needed
+            prefix_len = 32
+            if netmask:
+                try:
+                    prefix_len = sum(int(x).bit_count() for x in netmask.split("."))
+                except (ValueError, AttributeError):
+                    prefix_len = 32
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-nx:interface/loopback={loopback_id}"
+            payload = {
+                "tailf-ned-cisco-nx:loopback": {
+                    "name": int(loopback_id) if str(loopback_id).isdigit() else loopback_id,
+                    "description": description,
+                    "ip": {
+                        "address": {
+                            "ipaddr": f"{ip_address}/{prefix_len}",
+                        }
+                    },
+                }
+            }
+        else:
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}"
+            payload = {
+                "tailf-ned-cisco-ios:Loopback": {
+                    "name": str(loopback_id),
+                    "description": description,
+                    "ip": {
+                        "address": {
+                            "primary": {
+                                "address": ip_address,
+                                "mask": netmask,
+                            }
+                        }
+                    },
+                }
+            }
+        resp = self.request("PUT", path, data=payload)
         return resp.status_code, resp.text
 
-    def delete_loopback_interface(self, device_name: str, loopback_id: str) -> Tuple[int, str]:
-        """Delete a Loopback interface from a device."""
-        resp = self.request(
-            "DELETE",
-            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}"
-        )
+    def delete_loopback_interface(
+        self, device_name: str, loopback_id: str, platform: str | None = None
+    ) -> tuple[int, str]:
+        """Delete a Loopback interface from an IOS-XE, IOS-XR, or NX-OS device."""
+        plat = self._detect_platform(device_name, platform)
+        if plat == "iosxr":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios-xr:interface/Loopback={loopback_id}"
+        elif plat == "nx":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-nx:interface/loopback={loopback_id}"
+        else:
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/Loopback={loopback_id}"
+        resp = self.request("DELETE", path)
+        return resp.status_code, resp.text
+
+    def update_interface_description(
+        self,
+        device_name: str,
+        interface_type: str,
+        interface_name: str,
+        description: str,
+        platform: str | None = None,
+    ) -> tuple[int, str]:
+        """Update interface description using atomic PATCH across platforms."""
+        plat = self._detect_platform(device_name, platform)
+        encoded_name = interface_name.replace("/", "%2F")
+        if plat == "iosxr":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios-xr:interface/{interface_type}={encoded_name}"
+            payload = {f"tailf-ned-cisco-ios-xr:{interface_type}": {"id": interface_name, "description": description}}
+        elif plat == "nx":
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-nx:interface/{interface_type}={encoded_name}"
+            payload = {f"tailf-ned-cisco-nx:{interface_type}": {"id": interface_name, "description": description}}
+        else:
+            path = f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:interface/{interface_type}={encoded_name}"
+            payload = {f"tailf-ned-cisco-ios:{interface_type}": {"name": interface_name, "description": description}}
+        resp = self.request("PATCH", path, data=payload)
         return resp.status_code, resp.text
 
     # --- Device Lifecycle Management Methods (US1) ---
@@ -156,11 +281,11 @@ class NSOClient:
         name: str,
         address: str,
         port: int = 23,
-        authgroup: str = "default",
-        ned_id: str = "tailf-ned-cisco-ios-id:cisco-ios-cli-6.109",
+        authgroup: str = "labadmin",
+        ned_id: str = "cisco-ios-cli-6.109:cisco-ios-cli-6.109",
         protocol: str = "telnet",
         admin_state: str = "unlocked",
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """Add a new managed device to Cisco NSO CDB."""
         payload = {
             "tailf-ncs:device": [
@@ -187,13 +312,13 @@ class NSOClient:
     def edit_device(
         self,
         name: str,
-        address: Optional[str] = None,
-        port: Optional[int] = None,
-        authgroup: Optional[str] = None,
-        description: Optional[str] = None,
-    ) -> Tuple[int, str]:
+        address: str | None = None,
+        port: int | None = None,
+        authgroup: str | None = None,
+        description: str | None = None,
+    ) -> tuple[int, str]:
         """Update configuration parameters of an existing device in NSO."""
-        device_data: Dict[str, Any] = {"name": name}
+        device_data: dict[str, Any] = {"name": name}
         if address is not None:
             device_data["address"] = address
         if port is not None:
@@ -207,7 +332,7 @@ class NSOClient:
         resp = self.request("PATCH", f"tailf-ncs:devices/device={name}", data=payload)
         return resp.status_code, resp.text
 
-    def rename_device(self, old_name: str, new_name: str) -> Tuple[int, str]:
+    def rename_device(self, old_name: str, new_name: str) -> tuple[int, str]:
         """
         Rename an existing device in NSO CDB.
         Fetches existing device config, instantiates under new name, and deletes the old name.
@@ -221,18 +346,20 @@ class NSOClient:
             return 404, f"Device '{old_name}' not found"
         
         dev_entry = dict(dev_list[0])
-        dev_entry["name"] = new_name
+        keys_to_keep = ["name", "address", "port", "authgroup", "device-type", "description"]
+        new_entry = {k: dev_entry[k] for k in keys_to_keep if k in dev_entry}
+        new_entry["name"] = new_name
 
-        # Create device under new name
-        put_resp = self.request("PUT", f"tailf-ncs:devices/device={new_name}", data={"tailf-ncs:device": dev_entry})
-        if put_resp.status_code not in (200, 201, 204):
-            return put_resp.status_code, f"Failed creating device under new name: {put_resp.text}"
+        # Create device under new name via POST
+        post_resp = self.request("POST", "tailf-ncs:devices", data={"tailf-ncs:device": [new_entry]})
+        if post_resp.status_code not in (200, 201, 204):
+            return post_resp.status_code, f"Failed creating device under new name: {post_resp.text}"
 
         # Delete old device
-        del_status, del_text = self.delete_device(old_name)
+        del_status, _del_text = self.delete_device(old_name)
         return 200 if del_status in (200, 204) else del_status, f"Device renamed from {old_name} to {new_name}"
 
-    def delete_device(self, device_name: str) -> Tuple[int, str]:
+    def delete_device(self, device_name: str) -> tuple[int, str]:
         """Delete / decommission a managed device from Cisco NSO CDB."""
         resp = self.request("DELETE", f"tailf-ncs:devices/device={device_name}")
         return resp.status_code, resp.text
@@ -245,39 +372,24 @@ class NSOClient:
         acl_name: str,
         port_number: int,
         protocol: str = "tcp",
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """
         Create an extended ACL on a Cisco IOS device blocking a specific TCP/UDP port.
-        Rule 10: deny <protocol> any any eq <port>
-        Rule 20: permit ip any any
+        Rule 1: deny <protocol> any any eq <port>
+        Rule 2: permit ip any any
         """
         payload = {
-            "tailf-ned-cisco-ios:extended": {
-                "id": acl_name,
-                "rule": [
-                    {
-                        "name": "10",
-                        "action": "deny",
-                        "protocol": protocol,
-                        "source": {"any": [None]},
-                        "destination": {
-                            "any": [None],
-                            "port": {"eq": port_number},
-                        },
-                    },
-                    {
-                        "name": "20",
-                        "action": "permit",
-                        "protocol": "ip",
-                        "source": {"any": [None]},
-                        "destination": {"any": [None]},
-                    },
+            "tailf-ned-cisco-ios:ext-named-acl": {
+                "name": acl_name,
+                "ext-access-list-rule": [
+                    {"rule": f"deny {protocol} any any eq {port_number}"},
+                    {"rule": "permit ip any any"},
                 ],
             }
         }
         resp = self.request(
             "PUT",
-            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:ip/access-list/extended={acl_name}",
+            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:ip/access-list/extended/ext-named-acl={acl_name}",
             data=payload,
         )
         return resp.status_code, resp.text
@@ -289,7 +401,7 @@ class NSOClient:
         interface_name: str,
         acl_name: str,
         direction: str = "in",
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """Apply an access-list filter to an interface (GigabitEthernet, FastEthernet, etc.)."""
         # RESTCONF path encoding for interface name e.g. "0/1" -> "0%2F1"
         encoded_name = interface_name.replace("/", "%2F")
@@ -297,11 +409,12 @@ class NSOClient:
             f"tailf-ned-cisco-ios:{interface_type}": {
                 "name": interface_name,
                 "ip": {
-                    "access-group": {
-                        direction: {
-                            "acl": acl_name,
+                    "access-group": [
+                        {
+                            "direction": direction,
+                            "access-list": acl_name,
                         }
-                    }
+                    ]
                 },
             }
         }
@@ -312,11 +425,11 @@ class NSOClient:
         )
         return resp.status_code, resp.text
 
-    def remove_port_block_acl(self, device_name: str, acl_name: str) -> Tuple[int, str]:
+    def remove_port_block_acl(self, device_name: str, acl_name: str) -> tuple[int, str]:
         """Delete an extended ACL from NSO device config."""
         resp = self.request(
             "DELETE",
-            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:ip/access-list/extended={acl_name}"
+            f"tailf-ncs:devices/device={device_name}/config/tailf-ned-cisco-ios:ip/access-list/extended/ext-named-acl={acl_name}"
         )
         return resp.status_code, resp.text
 
@@ -325,7 +438,7 @@ class NSOClient:
         device_name: str,
         interface_type: str,
         interface_name: str,
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """Administratively disable (shutdown) an interface."""
         encoded_name = interface_name.replace("/", "%2F")
         payload = {
@@ -346,7 +459,7 @@ class NSOClient:
         device_name: str,
         interface_type: str,
         interface_name: str,
-    ) -> Tuple[int, str]:
+    ) -> tuple[int, str]:
         """Re-enable (no shutdown) an interface."""
         encoded_name = interface_name.replace("/", "%2F")
         resp = self.request(
@@ -357,7 +470,7 @@ class NSOClient:
 
     # --- NSO Operational Actions ---
 
-    def check_sync(self, device_name: str) -> Tuple[int, Any]:
+    def check_sync(self, device_name: str) -> tuple[int, Any]:
         """Trigger check-sync action on a device."""
         resp = self.request(
             "POST",
@@ -367,7 +480,7 @@ class NSOClient:
         )
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def sync_from(self, device_name: str) -> Tuple[int, Any]:
+    def sync_from(self, device_name: str) -> tuple[int, Any]:
         """Trigger sync-from action to pull device configuration into NSO CDB."""
         resp = self.request(
             "POST",
@@ -377,7 +490,7 @@ class NSOClient:
         )
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def fetch_host_keys(self, device_name: str) -> Tuple[int, Any]:
+    def fetch_host_keys(self, device_name: str) -> tuple[int, Any]:
         """Fetch SSH host keys from device into NSO."""
         resp = self.request(
             "POST",
@@ -387,7 +500,7 @@ class NSOClient:
         )
         return resp.status_code, resp.json() if resp.status_code == 200 else resp.text
 
-    def compare_config(self, device_name: str) -> Tuple[int, Any]:
+    def compare_config(self, device_name: str) -> tuple[int, Any]:
         """Compare device config between NSO CDB and actual device (diff)."""
         resp = self.request(
             "POST",
